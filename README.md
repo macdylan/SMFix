@@ -4,8 +4,7 @@ Snapmaker2 G-Code Post Processor for PrusaSlicer and SuperSlicer
 - Model thumbnails are displayed on touchscreen
 
 ## Install
-- 下载 smfix.py `chmod +x smfix.py`
-- PrusaSlicer 设置路径：
+- Download [smfix](https://github.com/macdylan/Snapmaker2Slic3rPostProcessor/releases/tag/go1.0) `chmod +x smfix`
+- PrusaSlicer Settings：
     1. `Printer Settings - Firmware - G-code thumbnails: 300x300`
-    2. `Print Settings - Output options - Post-processing scripts: /path/to/smfix.py`
-
+    2. `Print Settings - Output options - Post-processing scripts: /path/to/smfix`
