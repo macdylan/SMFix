@@ -25,11 +25,11 @@ linux-arm6: smfix.go
 
 win64: smfix.go
 	GOOS=windows GOARCH=amd64 \
-		 $(CMD) -o $(DIST)$(PROJNAME)-$@ $^
+		 $(CMD) -o $(DIST)$(PROJNAME)-$@.exe $^
 
 win32: smfix.go
 	GOOS=windows GOARCH=386 \
-		 $(CMD) -o $(DIST)$(PROJNAME)-$@ $^
+		 $(CMD) -o $(DIST)$(PROJNAME)-$@.exe $^
 
 all: darwin-arm64 darwin-amd64 linux-amd64 linux-arm7 linux-arm6 win64 win32
 	@true
@@ -37,3 +37,5 @@ all: darwin-arm64 darwin-amd64 linux-amd64 linux-arm7 linux-arm6 win64 win32
 clean:
 	rm -f $(DIST)$(PROJNAME)-*
 
+test:
+	go test -v smfix.go smfix_test.go

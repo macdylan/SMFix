@@ -90,22 +90,30 @@ func fix() {
 	speed, _ := strconv.Atoi(sliPrintSpeedSec)
 
 	headers := [][]byte{
+		[]byte(";post-processed by smfix (https://github.com/macdylan/Snapmaker2Slic3rPostProcessor)"),
 		[]byte(";Header Start"),
 		[]byte(";FAVOR:Marlin"),
+		[]byte(";TIME:666"),
 		[]byte(fmt.Sprintf(";Layer height: %s", sliLayerHeight)),
 		[]byte(";header_type: 3dp"),
-		[]byte(";"), // slot for thumbnail
+		[]byte(";no thumbnail, Printer Settings / Firmware / G-code thumbnails, add '300x150'"), // slot for thumbnail
 		[]byte(fmt.Sprintf(";file_total_lines: %d", lineCount)),
 		[]byte(fmt.Sprintf(";estimated_time(s): %d", findEstimatedTime(gcodes))),
 		[]byte(fmt.Sprintf(";nozzle_temperature(°C): %s", sliTemp)),
 		[]byte(fmt.Sprintf(";build_plate_temperature(°C): %s", sliBedTemp)),
 		[]byte(fmt.Sprintf(";work_speed(mm/minute): %d", speed*60)),
+		[]byte(";max_x(mm): 0"),
+		[]byte(";max_y(mm): 0"),
+		[]byte(";max_z(mm): 0"),
+		[]byte(";min_x(mm): 0"),
+		[]byte(";min_y(mm): 0"),
+		[]byte(";min_z(mm): 0"),
 		[]byte(";Header End\n\n"),
 	}
 
 	thumbnail := convertThumbnail(gcodes)
 	if thumbnail != nil {
-		headers[4] = append([]byte(";thumbnail: "), thumbnail...)
+		headers[6] = append([]byte(";thumbnail: "), thumbnail...)
 	}
 
 	bw := bufio.NewWriter(out)
@@ -118,9 +126,9 @@ func usage() {
 	fmt.Println("smfix, optimize G-code file for Snapmaker 2.")
 	fmt.Println("<https://github.com/macdylan/Snapmaker2Slic3rPostProcessor>")
 	fmt.Println("Example:")
-	fmt.Println("# smfix a.gcode")
+	fmt.Println("  # smfix a.gcode")
 	fmt.Println("or")
-	fmt.Println("# cat a.gcode | smfix > b.gcode")
+	fmt.Println("  # cat a.gcode | smfix > b.gcode")
 	fmt.Println("")
 	os.Exit(1)
 }
@@ -132,6 +140,12 @@ func main() {
 			os.Exit(2)
 		}
 	}()
+
+	if sliLayerHeight == "" || sliTemp == "" || sliPrintSpeedSec == "" {
+		fmt.Fprintln(os.Stderr, "Must run this program within PrusaSlicer or SuperSlicer.")
+		fmt.Fprintln(os.Stderr, "Settings: https://github.com/macdylan/Snapmaker2Slic3rPostProcessor")
+		os.Exit(1)
+	}
 
 	if len(os.Args) > 1 {
 		var err error
