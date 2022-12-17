@@ -1,6 +1,6 @@
 PROJNAME = smfix
 LDFLAGS = -w -s
-CMD = go build -ldflags="$(LDFLAGS)"
+CMD = go build -trimpath -ldflags="$(LDFLAGS)"
 DIST = dist/
 
 darwin-arm64: smfix.go
