@@ -31,6 +31,9 @@ win32: smfix.go
 	GOOS=windows GOARCH=386 \
 		 $(CMD) -o $(DIST)$(PROJNAME)-$@.exe $^
 
+release: darwin-arm64 darwin-amd64 win64 win32
+	@true
+
 all: darwin-arm64 darwin-amd64 linux-amd64 linux-arm7 linux-arm6 win64 win32
 	@true
 

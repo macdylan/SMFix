@@ -29,6 +29,11 @@ var (
 	sliFilamentTypes         []string
 	sliFirstLayerTemperature []string
 	sliBedTemperature        []string
+	sliMinX                  float64
+	sliMinY                  float64
+	sliMaxX                  float64
+	sliMaxY                  float64
+	sliMaxZ                  float64
 )
 
 func min(a, b int) int {
@@ -47,16 +52,15 @@ func max(a, b int) int {
 
 func getProperty(gcodes [][]byte, key string) string {
 	// from env
-	_env := os.Getenv("SLIC3R_" + strings.ToUpper(key))
-	if _env != "" {
-		return _env
+	if v, ok := os.LookupEnv("SLIC3R_" + strings.ToUpper(key)); ok {
+		return v
 	}
 
 	// from prusaslicer_config
 	key_b := []byte("; " + key + " =")
 	i := len(gcodes) - 1
-	m := min(i-1000, 0) // tail 1k lines
-	for ; m >= i; i-- {
+	j := max(i-1000, 0) // tail 1k lines
+	for ; i >= j; i-- {
 		if 0 == bytes.Index(gcodes[i], key_b) {
 			return string(gcodes[i][bytes.Index(gcodes[i], []byte("= "))+2:])
 		}
@@ -140,14 +144,18 @@ func fix() {
 		if err != nil {
 			break
 		}
-		gcodes = append(gcodes, line[0:len(line)-1])
-		lineCount++
+		// this is a bug of prusaslicer and it conflict with the firmware of J1@V2.2.13
+		if 0 == bytes.Index(line, []byte("G4 S0")) {
+			continue
+		}
 		if 0 == bytes.Index(line, cmdL) {
 			extL = true
 		}
 		if 0 == bytes.Index(line, cmdR) {
 			extR = true
 		}
+		gcodes = append(gcodes, line[0:len(line)-1])
+		lineCount++
 	}
 	in.Close()
 
@@ -158,6 +166,12 @@ func fix() {
 	sliLayerHeight = getProperty(gcodes, "layer_height")
 	sliPrintSpeedSec = getProperty(gcodes, "max_print_speed")
 	sliPrinterNotes = getProperty(gcodes, "printer_notes")
+	// add '; min_x = [first_layer_print_min_0] ...' to the end-gcode in the prusaslicer settings
+	sliMinX, _ = strconv.ParseFloat(getProperty(gcodes, "min_x"), 32)
+	sliMinY, _ = strconv.ParseFloat(getProperty(gcodes, "min_y"), 32)
+	sliMaxX, _ = strconv.ParseFloat(getProperty(gcodes, "max_x"), 32)
+	sliMaxY, _ = strconv.ParseFloat(getProperty(gcodes, "max_y"), 32)
+	sliMaxZ, _ = strconv.ParseFloat(getProperty(gcodes, "max_z"), 32)
 
 	sliTemp = split(getProperty(gcodes, "temperature"))
 	sliFirstTemp = split(getProperty(gcodes, "first_layer_temperature"))
@@ -236,12 +250,12 @@ func fix() {
 
 		ext = append(ext,
 			[]byte(fmt.Sprintf(";Bed Temperature:%d", bedTemperature)),
-			[]byte(";Work Range - Min X:0"),
-			[]byte(";Work Range - Min Y:0"),
-			[]byte(";Work Range - Min Z:0"),
-			[]byte(";Work Range - Min X:0"),
-			[]byte(";Work Range - Max Y:0"),
-			[]byte(";Work Range - Max Z:0"),
+			[]byte(fmt.Sprintf(";Work Range - Max X:%.4f", sliMaxX)),
+			[]byte(fmt.Sprintf(";Work Range - Max Y:%.4f", sliMaxY)),
+			[]byte(fmt.Sprintf(";Work Range - Max Z:%.4f", sliMaxZ)),
+			[]byte(fmt.Sprintf(";Work Range - Min X:%.4f", sliMinX)),
+			[]byte(fmt.Sprintf(";Work Range - Min Y:%.4f", sliMinY)),
+			[]byte(";Work Range - Min Z:0.0"),
 			[]byte(";no thumbnail, Printer Settings / Firmware / G-code thumbnails, add '600x600'"),
 			[]byte(";Header End\n\n"),
 		)
@@ -265,11 +279,11 @@ func fix() {
 			[]byte(fmt.Sprintf(";nozzle_temperature(°C): %s", sliTemp[0])),
 			[]byte(fmt.Sprintf(";build_plate_temperature(°C): %s", sliBedTemperature[0])),
 			[]byte(fmt.Sprintf(";work_speed(mm/minute): %d", speed*60)),
-			[]byte(";max_x(mm): 0"),
-			[]byte(";max_y(mm): 0"),
-			[]byte(";max_z(mm): 0"),
-			[]byte(";min_x(mm): 0"),
-			[]byte(";min_y(mm): 0"),
+			[]byte(fmt.Sprintf(";max_x(mm): %.4f", sliMaxX)),
+			[]byte(fmt.Sprintf(";max_y(mm): %.4f", sliMaxY)),
+			[]byte(fmt.Sprintf(";max_z(mm): %.4f", sliMaxZ)),
+			[]byte(fmt.Sprintf(";min_x(mm): %.4f", sliMinX)),
+			[]byte(fmt.Sprintf(";min_y(mm): %.4f", sliMinY)),
 			[]byte(";min_z(mm): 0"),
 			[]byte(";Header End\n\n"),
 		}
