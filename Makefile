@@ -44,7 +44,7 @@ dep: # Get the dependencies
 all: dep darwin-arm64 darwin-amd64 linux-amd64 linux-arm7 linux-arm6 win64 win32
 	@true
 
-all-zip:
+all-zip: all
 	for p in darwin-arm64 darwin-amd64 linux-amd64 linux-arm7 linux-arm6 win64 win32; do \
 		zip -j $(DIST)$(PROJNAME)-$$p.zip $(DIST)$(PROJNAME)-$$p* README.md LICENSE; \
 	done
