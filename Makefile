@@ -1,44 +1,56 @@
 PROJNAME = smfix
-LDFLAGS = -w -s
-CMD = go build -trimpath -ldflags="$(LDFLAGS)"
-DIST = dist/
 
-darwin-arm64: smfix.go
+ifeq "$(GITHUB_REF_NAME)" ""
+    VERSION := -X 'main.Version=$(shell git rev-parse --short HEAD)'
+else
+	VERSION := -X 'main.Version=$(GITHUB_REF_NAME)'
+endif
+FLAGS = -ldflags="-w -s $(VERSION)"
+CMD = go build -trimpath $(FLAGS)
+DIST = dist/
+SRC = $(shell ls *.go | grep -v _test.go)
+
+darwin-arm64: $(SRC)
 	GOOS=darwin GOARCH=arm64 \
 		 $(CMD) -o $(DIST)$(PROJNAME)-$@ $^
 
-darwin-amd64: smfix.go
+darwin-amd64: $(SRC)
 	GOOS=darwin GOARCH=amd64 \
 		 $(CMD) -o $(DIST)$(PROJNAME)-$@ $^
 
-linux-amd64: smfix.go
+linux-amd64: $(SRC)
 	GOOS=linux GOARCH=amd64 \
 		 $(CMD) -o $(DIST)$(PROJNAME)-$@ $^
 
-linux-arm7: smfix.go
+linux-arm7: $(SRC)
 	GOOS=linux GOARCH=arm GOARM=7 \
 		 $(CMD) -o $(DIST)$(PROJNAME)-$@ $^
 
-linux-arm6: smfix.go
+linux-arm6: $(SRC)
 	GOOS=linux GOARCH=arm GOARM=6 \
 		 $(CMD) -o $(DIST)$(PROJNAME)-$@ $^
 
-win64: smfix.go
+win64: $(SRC)
 	GOOS=windows GOARCH=amd64 \
 		 $(CMD) -o $(DIST)$(PROJNAME)-$@.exe $^
 
-win32: smfix.go
+win32: $(SRC)
 	GOOS=windows GOARCH=386 \
 		 $(CMD) -o $(DIST)$(PROJNAME)-$@.exe $^
 
-release: darwin-arm64 darwin-amd64 win64 win32
+dep: # Get the dependencies
+	go mod download
+
+all: dep darwin-arm64 darwin-amd64 linux-amd64 linux-arm7 linux-arm6 win64 win32
 	@true
 
-all: darwin-arm64 darwin-amd64 linux-amd64 linux-arm7 linux-arm6 win64 win32
-	@true
+all-zip:
+	for p in darwin-arm64 darwin-amd64 linux-amd64 linux-arm7 linux-arm6 win64 win32; do \
+		zip -j $(DIST)$(PROJNAME)-$$p.zip $(DIST)$(PROJNAME)-$$p* README.md LICENSE; \
+	done
 
 clean:
 	rm -f $(DIST)$(PROJNAME)-*
 
 test:
-	go test -v smfix.go smfix_test.go
+	go test -v $(SRC) smfix_test.go

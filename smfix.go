@@ -5,185 +5,126 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 )
 
 var (
-	silent  = false
-	reThumb = regexp.MustCompile(`(?m)(?:^; thumbnail begin \d+[x ]\d+ \d+)(?:\n|\r\n?)((?:.+(?:\n|\r\n?))+?)(?:^; thumbnail end)`)
-	in      *os.File
-	out     io.Writer
+	sliLayerHeight     string
+	sliPrintSpeedSec   string
+	sliPrinterNote     string
+	sliFilamentTypes   []string
+	sliNozzleTemp      []string
+	sliNozzleDiameters []string
+	sliBedTemp         []string
+	sliMinX            float64
+	sliMinY            float64
+	sliMaxX            float64
+	sliMaxY            float64
+	sliMaxZ            float64
 )
 
-var (
-	sliLayerHeight           string
-	sliPrintSpeedSec         string
-	sliPrinterNotes          string
-	sliFirstBedTemp          []string
-	sliTemp                  []string
-	sliFirstTemp             []string
-	sliNozzleDiameters       []string
-	sliFilamentTypes         []string
-	sliFirstLayerTemperature []string
-	sliBedTemperature        []string
-	sliMinX                  float64
-	sliMinY                  float64
-	sliMaxX                  float64
-	sliMaxY                  float64
-	sliMaxZ                  float64
-)
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func getProperty(gcodes [][]byte, key string) string {
-	// from env
-	if v, ok := os.LookupEnv("SLIC3R_" + strings.ToUpper(key)); ok {
-		return v
-	}
-
-	// from prusaslicer_config
-	key_b := []byte("; " + key + " =")
-	i := len(gcodes) - 1
-	j := max(i-1000, 0) // tail 1k lines
-	for ; i >= j; i-- {
-		if 0 == bytes.Index(gcodes[i], key_b) {
-			return string(gcodes[i][bytes.Index(gcodes[i], []byte("= "))+2:])
-		}
-	}
-
-	return ""
-}
-
-func split(s string) []string {
-	var x []string
-	if strings.Contains(s, ";") {
-		x = strings.Split(s, ";")
-	} else {
-		x = strings.Split(s, ",")
-	}
-	if len(x) == 1 {
-		x = append(x, "0")
-	}
-	return x
-}
-
-func convertThumbnail(gcodes [][]byte) []byte {
-	comments := bytes.NewBuffer([]byte{})
-	for _, line := range gcodes {
-		if len(line) > 0 && line[0] == ';' {
-			comments.Write(line)
-			comments.WriteRune('\n')
-		}
-	}
-	matches := reThumb.FindAllSubmatch(comments.Bytes(), -1)
-	if matches != nil {
-		none := []byte(nil)
-		data := matches[len(matches)-1][1]
-		data = bytes.ReplaceAll(data, []byte("\r\n"), none)
-		data = bytes.ReplaceAll(data, []byte("\n"), none)
-		data = bytes.ReplaceAll(data, []byte("; "), none)
-		b := []byte("data:image/png;base64,")
-		return append(b, data...)
-	}
-	return nil
-}
-
-func findEstimatedTime(gcodes [][]byte) int {
-	for _, line := range gcodes {
-		if 0 == bytes.Index(line, []byte("; estimated printing time")) {
-			est := line[bytes.Index(line, []byte("= "))+2:] // 2d 12h 8m 58s
-			est = bytes.ReplaceAll(est, []byte(" "), []byte(nil))
-			t := map[byte]int{'d': 0, 'h': 0, 'm': 0, 's': 0}
-			for _, p := range []byte("dhms") {
-				if i := bytes.IndexByte(est, p); i >= 0 {
-					t[p], _ = strconv.Atoi(string(est[0:i]))
-					est = est[i+1:]
-				}
-			}
-			return t['d']*86400 +
-				t['h']*3600 +
-				t['m']*60 +
-				t['s']
-		}
-	}
-	return 0
-}
-
-func fix() {
+func fix(in io.ReadCloser, out io.WriteCloser) {
 	var (
-		useV1 bool
-
-		cmdL = []byte("T0")
-		extL bool
-		cmdR = []byte("T1")
-		extR bool
+		useV1  bool
+		hasT0  bool
+		hasT1  bool
+		gcodes [][]byte
 
 		lineCount = 0
+		printMode = PrintModeDefault
 	)
 
 	buf := &bytes.Buffer{}
 	buf.ReadFrom(in)
-	gcodes := [][]byte{}
 	for {
 		line, err := buf.ReadBytes('\n')
 		if err != nil {
 			break
 		}
-		// this is a bug of prusaslicer and it conflict with the firmware of J1@V2.2.13
-		if 0 == bytes.Index(line, []byte("G4 S0")) {
+		line = bytes.TrimSpace(line)
+		if len(line) < 1 {
 			continue
 		}
-		if 0 == bytes.Index(line, cmdL) {
-			extL = true
+
+		if startWith(line, "; Postprocessed by smfix") {
+			os.Exit(0)
+		} else if startWith(line, "; SNAPMAKER_GCODE_V0") {
+			useV1 = false
+		} else if startWith(line, "; SNAPMAKER_GCODE_V1") {
+			useV1 = true
+		} else if startWith(line, "G4 S0") {
+			// this is a bug with prusaslicer it's conflict with the firmware of J1@V2.2.13
+			continue
+		} else if startWith(line, "T0") {
+			hasT0 = true
+		} else if startWith(line, "T1") {
+			hasT1 = true
+		} else if startWith(line, "M605 S2") {
+			printMode = PrintModeDuplication
+		} else if startWith(line, "M605 S3") {
+			printMode = PrintModeMirror
+		} else if startWith(line, "M605 S4") {
+			printMode = PrintModeBackup
 		}
-		if 0 == bytes.Index(line, cmdR) {
-			extR = true
-		}
-		gcodes = append(gcodes, line[0:len(line)-1])
+		gcodes = append(gcodes, line)
 		lineCount++
 	}
 	in.Close()
 
-	if lineCount == 0 {
-		usage()
+	if lineCount < 2 {
+		flag_usage()
 	}
 
-	sliLayerHeight = getProperty(gcodes, "layer_height")
-	sliPrintSpeedSec = getProperty(gcodes, "max_print_speed")
-	sliPrinterNotes = getProperty(gcodes, "printer_notes")
-	// add '; min_x = [first_layer_print_min_0] ...' to the end-gcode in the prusaslicer settings
-	sliMinX, _ = strconv.ParseFloat(getProperty(gcodes, "min_x"), 32)
-	sliMinY, _ = strconv.ParseFloat(getProperty(gcodes, "min_y"), 32)
-	sliMaxX, _ = strconv.ParseFloat(getProperty(gcodes, "max_x"), 32)
-	sliMaxY, _ = strconv.ParseFloat(getProperty(gcodes, "max_y"), 32)
-	sliMaxZ, _ = strconv.ParseFloat(getProperty(gcodes, "max_z"), 32)
+	{
+		sliFilamentTypes = split(getProperty(gcodes, "filament_type"))
+		if !hasT0 {
+			sliFilamentTypes[0] = "-"
+		}
+		if !hasT1 {
+			sliFilamentTypes[1] = "-"
+		}
 
-	sliTemp = split(getProperty(gcodes, "temperature"))
-	sliFirstTemp = split(getProperty(gcodes, "first_layer_temperature"))
-	sliFilamentTypes = split(getProperty(gcodes, "filament_type"))
-	sliNozzleDiameters = split(getProperty(gcodes, "nozzle_diameter"))
-	sliFirstLayerTemperature = split(getProperty(gcodes, "first_layer_temperature"))
-	sliFirstBedTemp = split(getProperty(gcodes, "first_layer_bed_temperature"))
-	sliBedTemperature = split(getProperty(gcodes, "bed_temperature"))
+		sliNozzleDiameters = split(getProperty(gcodes, "nozzle_diameter"))
+		if sliNozzleDiameters[1] == "0" {
+			sliNozzleDiameters[1] = sliNozzleDiameters[0]
+		}
 
-	if extL || extR ||
+		sliLayerHeight = getProperty(gcodes, "layer_height")
+		sliPrinterNote = getProperty(gcodes, "printer_notes")
+		sliPrintSpeedSec = getProperty(gcodes,
+			"max_print_speed",
+			"outer_wall_speed", // bbs
+		)
+	}
+
+	{ // xyz
+		// add '; min_x = [first_layer_print_min_0] ...' to the end-gcode
+		sliMinX, _ = strconv.ParseFloat(getProperty(gcodes, "min_x"), 32)
+		sliMinY, _ = strconv.ParseFloat(getProperty(gcodes, "min_y"), 32)
+		sliMaxX, _ = strconv.ParseFloat(getProperty(gcodes, "max_x"), 32)
+		sliMaxY, _ = strconv.ParseFloat(getProperty(gcodes, "max_y"), 32)
+		sliMaxZ, _ = strconv.ParseFloat(getProperty(gcodes, "max_z"), 32)
+	}
+
+	{ // temperature
+		sliNozzleTemp = split(getProperty(gcodes,
+			"temperature",
+			"nozzle_temperature", // bbs
+		))
+		sliBedTemp = split(getProperty(gcodes,
+			"bed_temperature",
+			"hot_plate_temp",  // bbs
+			"cool_plate_temp", // bbs
+			"eng_plate_temp",  // bbs
+		))
+	}
+
+	if hasT0 || hasT1 || printMode != PrintModeDefault ||
 		// settings: Printer Settings - Notes - add line(PRINTER_GCODE_V1)
-		strings.Contains(sliPrinterNotes, "PRINTER_GCODE_V1") {
+		strings.Contains(sliPrinterNote, "PRINTER_GCODE_V1") {
 		useV1 = true
 	}
 
@@ -197,49 +138,49 @@ func fix() {
 	// V1
 	if useV1 {
 		var (
-			btempL, _      = strconv.Atoi(sliBedTemperature[0])
-			btempR, _      = strconv.Atoi(sliBedTemperature[1])
-			bedTemperature = max(btempL, btempR)
+			bedTempT0, _   = strconv.Atoi(sliBedTemp[0])
+			bedTempT1, _   = strconv.Atoi(sliBedTemp[1])
+			bedTemperature = max(bedTempT0, bedTempT1)
 
-			ptempL, ptempR = sliTemp[0], sliTemp[1]
+			nozzleTempT0, nozzleTempT1 = sliNozzleTemp[0], sliNozzleTemp[1]
 		)
 
 		ext := [][]byte{
 			[]byte(";Version:1"),
-			[]byte(";Slicer:PrusaSlicer"),
-			[]byte(fmt.Sprintf(";Estimated Print Time:%.0f", float64(findEstimatedTime(gcodes))*1.07)),
+			// []byte(";Slicer:PrusaSlicer"),
+			[]byte(fmt.Sprintf(";Estimated Print Time:%d", findEstimatedTime(gcodes))),
 			[]byte(fmt.Sprintf(";Lines:%d", lineCount)),
 		}
 
-		if extL || extR {
+		if hasT0 || hasT1 {
 			ext = append(ext,
 				[]byte(";Printer:Snapmaker J1"),
-				[]byte(";Extruder Mode:IDEX Full Control"),
+				[]byte(fmt.Sprintf(";Extruder Mode:%s", printMode)),
 			)
 
-			if extL && extR {
+			if hasT0 && hasT1 {
 				ext = append(ext, []byte(";Extruder(s) Used:2"))
 			} else {
 				ext = append(ext, []byte(";Extruder(s) Used:1"))
-				if extL {
-					bedTemperature = btempL
-					// disable R nozzle
-					ptempR = "0"
+				if hasT0 {
+					bedTemperature = bedTempT0
+					// disable T1
+					nozzleTempT1 = "0"
 				} else {
-					bedTemperature = btempR
-					// disable L nozzle
-					ptempL = "0"
+					bedTemperature = bedTempT1
+					// disable T0
+					nozzleTempT0 = "0"
 				}
 			}
 
 			ext = append(ext,
 				[]byte(fmt.Sprintf(";Extruder 0 Nozzle Size:%s", sliNozzleDiameters[0])),
 				[]byte(fmt.Sprintf(";Extruder 0 Material:%s", sliFilamentTypes[0])),
-				[]byte(fmt.Sprintf(";Extruder 0 Print Temperature:%s", ptempL)),
+				[]byte(fmt.Sprintf(";Extruder 0 Print Temperature:%s", nozzleTempT0)),
 
 				[]byte(fmt.Sprintf(";Extruder 1 Nozzle Size:%s", sliNozzleDiameters[1])),
 				[]byte(fmt.Sprintf(";Extruder 1 Material:%s", sliFilamentTypes[1])),
-				[]byte(fmt.Sprintf(";Extruder 1 Print Temperature:%s", ptempR)),
+				[]byte(fmt.Sprintf(";Extruder 1 Print Temperature:%s", nozzleTempT1)),
 			)
 
 		} else {
@@ -276,8 +217,8 @@ func fix() {
 			[]byte(";no thumbnail, Printer Settings / Firmware / G-code thumbnails, add '300x150'"), // slot for thumbnail
 			[]byte(fmt.Sprintf(";file_total_lines: %d", lineCount+19)),
 			[]byte(fmt.Sprintf(";estimated_time(s): %.0f", float64(findEstimatedTime(gcodes))*1.07)),
-			[]byte(fmt.Sprintf(";nozzle_temperature(°C): %s", sliTemp[0])),
-			[]byte(fmt.Sprintf(";build_plate_temperature(°C): %s", sliBedTemperature[0])),
+			[]byte(fmt.Sprintf(";nozzle_temperature(°C): %s", sliNozzleTemp[0])),
+			[]byte(fmt.Sprintf(";build_plate_temperature(°C): %s", sliBedTemp[0])),
 			[]byte(fmt.Sprintf(";work_speed(mm/minute): %d", speed*60)),
 			[]byte(fmt.Sprintf(";max_x(mm): %.4f", sliMaxX)),
 			[]byte(fmt.Sprintf(";max_y(mm): %.4f", sliMaxY)),
@@ -299,58 +240,34 @@ func fix() {
 	bw.Write(bytes.Join(headers, []byte("\n")))
 	bw.Write(bytes.Join(gcodes, []byte("\n")))
 	bw.Flush()
-}
-
-func usage() {
-	fmt.Println("smfix, optimize G-code file for Snapmaker 2.")
-	fmt.Println("<https://github.com/macdylan/Snapmaker2Slic3rPostProcessor>")
-	fmt.Println("Example:")
-	fmt.Println("  # smfix a.gcode")
-	fmt.Println("or")
-	fmt.Println("  # cat a.gcode | smfix > b.gcode")
-	fmt.Println("")
-	os.Exit(1)
+	out.Close()
 }
 
 func main() {
-	defer func() {
-		if r := recover(); r != nil {
-			fmt.Fprintf(os.Stderr, "Err: %s", r)
-			os.Exit(2)
-		}
-	}()
-
+	var (
+		in  *os.File
+		out io.WriteCloser
+		err error
+	)
 	if len(os.Args) > 1 {
-		var err error
 		in, err = os.Open(os.Args[1])
 		if err != nil {
-			fmt.Println(err)
-			return
+			log.Fatalln(err)
 		}
 
 		out, err = os.OpenFile(os.Args[1], os.O_WRONLY|os.O_CREATE, 0600)
 		if err != nil {
-			fmt.Println(err)
-			return
+			log.Fatalln(err)
 		}
 
 	} else if st, _ := os.Stdin.Stat(); (st.Mode() & os.ModeCharDevice) == 0 {
-		silent = true
 		in = os.Stdin
 		out = os.Stdout
 	}
 
 	if in == nil {
-		usage()
+		flag_usage()
 	}
 
-	if !silent {
-		fmt.Print("Starting SMFix ... ")
-	}
-
-	fix()
-
-	if !silent {
-		fmt.Println("done")
-	}
+	fix(in, out)
 }
