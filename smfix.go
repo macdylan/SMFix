@@ -112,7 +112,8 @@ func fix(in io.ReadCloser, out io.WriteCloser) {
 	{ // temperature
 		sliNozzleTemp = split(getProperty(gcodes,
 			"temperature",
-			"nozzle_temperature", // bbs
+			"nozzle_temperature",               // bbs
+			"nozzle_temperature_initial_layer", // bbs
 		))
 		sliBedTemp = split(getProperty(gcodes,
 			"bed_temperature",
