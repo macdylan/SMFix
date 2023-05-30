@@ -55,31 +55,97 @@ G1
 	}
 }
 
-func TestFindEstimatedTime(t *testing.T) {
-	gcodes := split_(`; estimated printing time = 2s
-	`)
-	if r := findEstimatedTime(gcodes); 2 != r {
+func TestConvertEstimatedTime(t *testing.T) {
+	gcodes := " 2s "
+	if r := convertEstimatedTime(gcodes); 2 != r {
 		t.Error("2s /", r)
 	}
-	gcodes = split_(`; estimated printing time = 1m 2s
-	`)
-	if r := findEstimatedTime(gcodes); 60+2 != r {
+	gcodes = "1m 2s "
+	if r := convertEstimatedTime(gcodes); 60+2 != r {
 		t.Error("1m 2s /", r)
 	}
-	gcodes = split_(`; estimated printing time = 1h  2s
-	`)
-	if r := findEstimatedTime(gcodes); 3600+2 != r {
+	gcodes = " 1h  2s"
+	if r := convertEstimatedTime(gcodes); 3600+2 != r {
 		t.Error("1h 2s /", r)
 	}
-	gcodes = split_(`; estimated printing time = 2d 1m  2s
-	`)
-	if r := findEstimatedTime(gcodes); 2*86400+1*60+2 != r {
+	gcodes = " 2d 1m  2s"
+	if r := convertEstimatedTime(gcodes); 2*86400+1*60+2 != r {
 		t.Error("2d 1m 2s /", r)
 	}
-	gcodes = split_(`; estimated printing time(first) = 2d
-; estimated printing time = 2d 1m  3s
-	`)
-	if r := findEstimatedTime(gcodes); 2*86400 != r {
-		t.Error("2d /", r)
+}
+
+func TestSplit(t *testing.T) {
+	s := "a"
+	r := split(s)
+	if len(r) != 2 {
+		t.Error("len is not 2, but:", len(r))
+	}
+	if r[0] != "a" {
+		t.Error("index 0 value is not a, but:", r[0])
+	}
+	if r[1] != "" {
+		t.Error("index 1 value is not empty, but:", r[1])
+	}
+
+	s = "xxxx, yy yy "
+	r = split(s)
+	if len(r) != 2 {
+		t.Error("len is not 2, but:", len(r))
+	}
+	if r[0] != "xxxx" {
+		t.Error("index 0 value is not xxxx, but:", r[0])
+	}
+	if r[1] != "yy yy" {
+		t.Error("index 1 value is not yy yy, but:", r[1])
+	}
+}
+
+func TestSplitFloat(t *testing.T) {
+	s := "0.2"
+	r := splitFloat(s)
+	if len(r) != 2 {
+		t.Error("len is not 2, but:", len(r))
+	}
+	if r[0] != 0.2 {
+		t.Error("index 0 value is not 0.2, but:", r[0])
+	}
+	if r[1] != 0 {
+		t.Error("index 1 value is not 0, but:", r[1])
+	}
+
+	s = "0.4, 0.689123"
+	r = splitFloat(s)
+	if len(r) != 2 {
+		t.Error("len is not 2, but:", len(r))
+	}
+	if r[0] != 0.4 {
+		t.Error("index 0 value is not 0.4, but:", r[0])
+	}
+	if r[1] != 0.689123 {
+		t.Error("index 1 value is not 0.689123, but:", r[1])
+	}
+
+	s = "nil,123"
+	r = splitFloat(s)
+	if len(r) != 2 {
+		t.Error("len is not 2, but:", len(r))
+	}
+	if r[0] != 0 {
+		t.Error("index 0 value is not 0, but:", r[0])
+	}
+	if r[1] != 123 {
+		t.Error("index 1 value is not 123, but:", r[1])
+	}
+
+	s = "nil,789,123"
+	r = splitFloat(s)
+	if len(r) != 3 {
+		t.Error("len is not 3, but:", len(r))
+	}
+	if r[0] != 0 {
+		t.Error("index 0 value is not 0, but:", r[0])
+	}
+	if r[1] != 789 {
+		t.Error("index 1 value is not 789, but:", r[1])
 	}
 }

@@ -2,53 +2,9 @@ package main
 
 import (
 	"bytes"
-	"os"
 	"strconv"
 	"strings"
 )
-
-func min(a, b int) int {
-	if a <= b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a >= b {
-		return a
-	}
-	return b
-}
-
-func config(gcodes [][]byte, key string) string {
-	// from env
-	if v, ok := os.LookupEnv("SLIC3R_" + strings.ToUpper(key)); ok {
-		return v
-	}
-
-	// from prusaslicer_config
-	key_b := []byte("; " + key + " =")
-	i := len(gcodes) - 1
-	j := max(i-1000, 0) // tail 1k lines
-	for ; i >= j; i-- {
-		if 0 == bytes.Index(gcodes[i], key_b) {
-			return string(gcodes[i][bytes.Index(gcodes[i], []byte("= "))+2:])
-		}
-	}
-
-	return ""
-}
-
-func getProperty(gcodes [][]byte, keys ...string) (v string) {
-	for _, key := range keys {
-		v = config(gcodes, key)
-		if v != "" {
-			return v
-		}
-	}
-	return v
-}
 
 func split(s string) []string {
 	var x []string
@@ -58,7 +14,19 @@ func split(s string) []string {
 		x = strings.Split(s, ",")
 	}
 	if len(x) == 1 {
-		x = append(x, "0")
+		x = append(x, "")
+	}
+	for i, str := range x {
+		x[i] = strings.TrimSpace(str)
+	}
+	return x
+}
+
+func splitFloat(s string) []float64 {
+	var x []float64
+	for _, v := range split(s) {
+		f, _ := strconv.ParseFloat(v, 64)
+		x = append(x, f)
 	}
 	return x
 }
@@ -84,32 +52,42 @@ func convertThumbnail(gcodes [][]byte) []byte {
 	return nil
 }
 
-func findEstimatedTime(gcodes [][]byte) int {
-	for _, line := range gcodes {
-		if 0 == bytes.Index(line, []byte("; estimated printing time")) {
-			est := line[bytes.Index(line, []byte("= "))+2:] // 2d 12h 8m 58s
-			est = bytes.ReplaceAll(est, []byte(" "), []byte(nil))
-			t := map[byte]int{'d': 0, 'h': 0, 'm': 0, 's': 0}
-			for _, p := range []byte("dhms") {
-				if i := bytes.IndexByte(est, p); i >= 0 {
-					t[p], _ = strconv.Atoi(string(est[0:i]))
-					est = est[i+1:]
-				}
-			}
-			return t['d']*86400 +
-				t['h']*3600 +
-				t['m']*60 +
-				t['s']
+func convertEstimatedTime(s string) int {
+	// est := s[strings.Index(s, "= ")+2:] // 2d 12h 8m 58s
+	est := strings.ReplaceAll(s, " ", "")
+	t := map[byte]int{'d': 0, 'h': 0, 'm': 0, 's': 0}
+	for _, p := range []byte("dhms") {
+		if i := strings.IndexByte(est, p); i >= 0 {
+			t[p], _ = strconv.Atoi(est[0:i])
+			est = est[i+1:]
 		}
 	}
-	return 0
+	return t['d']*86400 +
+		t['h']*3600 +
+		t['m']*60 +
+		t['s']
 }
 
-func startWith(b []byte, prefix ...string) bool {
-	for _, p := range prefix {
-		if bytes.HasPrefix(b, []byte(p)) {
-			return true
+func parseFloat(s string) float64 {
+	var f float64
+	f, _ = strconv.ParseFloat(s, 64)
+	return f
+}
+
+func parseInt(s string) int {
+	var i int
+	i, _ = strconv.Atoi(s)
+	return i
+}
+
+func getSetting(s string, key ...string) (v string, ok bool) {
+	if s[0] == ';' {
+		for _, p := range key {
+			prefix := "; " + p + " ="
+			if strings.HasPrefix(s, prefix) {
+				return strings.TrimSpace(s[len(prefix):]), true
+			}
 		}
 	}
-	return false
+	return "", false
 }
