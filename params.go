@@ -155,9 +155,9 @@ func parseParams(f io.Reader) error {
 			Params.PrinterNotes = v
 		} else if v, ok := getSetting(line, "max_print_speed", "outer_wall_speed" /*bbs*/); ok && Params.PrintSpeedSec == 0 {
 			Params.PrintSpeedSec = parseFloat(v)
-		} else if v, ok := getSetting(line, "temperature", "nozzle_temperature" /*bbs*/); ok && Params.NozzleTemperatures[0] == -1 {
+		} else if v, ok := getSetting(line, "first_layer_temperature", "temperature", "nozzle_temperature_initial_layer", "nozzle_temperature" /*bbs*/); ok && Params.NozzleTemperatures[0] == -1 {
 			Params.NozzleTemperatures = splitFloat(v)
-		} else if v, ok := getSetting(line, "bed_temperature", "hot_plate_temp" /*bbs*/); ok && Params.BedTemperatures[0] == -1 {
+		} else if v, ok := getSetting(line, "first_layer_bed_temperature", "bed_temperature", "hot_plate_temp_initial_layer", "hot_plate_temp" /*bbs*/); ok && Params.BedTemperatures[0] == -1 {
 			Params.BedTemperatures = splitFloat(v)
 		} else if v, ok := getSetting(line, "min_x"); ok {
 			Params.MinX = parseFloat(v)
