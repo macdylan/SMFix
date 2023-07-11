@@ -1,10 +1,15 @@
-package main
+package fix
 
 import (
 	"bufio"
 	"errors"
 	"io"
 	"strings"
+)
+
+var (
+	ErrIsFixed      = errors.New("No need to fix again.")
+	ErrInvalidGcode = errors.New("Invalid G-Code file.")
 )
 
 type slicerParams struct {
@@ -14,7 +19,6 @@ type slicerParams struct {
 	LeftExtruderUsed   bool
 	RightExtruderUsed  bool
 	PrintMode          string
-	PrinterModel       string // ;machine
 	PrinterNotes       string
 	LayerHeight        float64
 	TotalLayers        int
@@ -45,7 +49,6 @@ var Params = slicerParams{
 	PrintMode:          PrintModeDefault,
 	LeftExtruderUsed:   false,
 	RightExtruderUsed:  false,
-	PrinterModel:       "",
 	PrinterNotes:       "",
 	LayerHeight:        0,
 	TotalLayers:        0,
@@ -92,7 +95,13 @@ func (p *slicerParams) effective(x, y float64) float64 {
 	return x
 }
 
-func parseParams(f io.Reader) error {
+func ParseParams(f io.Reader) error {
+	defer func(f io.Reader) {
+		if h, ok := f.(io.ReadSeeker); ok {
+			h.Seek(0, 0)
+		}
+	}(f)
+
 	sc := bufio.NewScanner(f)
 
 	var (
@@ -117,7 +126,7 @@ func parseParams(f io.Reader) error {
 		}
 
 		if strings.HasPrefix(line, "; Postprocessed by smfix") {
-			return errors.New("No need to fix again.")
+			return ErrIsFixed
 		} else if strings.HasPrefix(line, "; SNAPMAKER_GCODE_V1") {
 			Params.Version = 1
 		} else if strings.HasPrefix(line, "M605 S2") {
@@ -278,6 +287,10 @@ func parseParams(f io.Reader) error {
 			// but J1 only support v1
 			Params.Version = 1
 		}
+	}
+
+	if Params.TotalLines < 20 || Params.Model == "" || (Params.NozzleTemperatures[0] == -1 && Params.NozzleTemperatures[1] == -1) {
+		return ErrInvalidGcode
 	}
 
 	return nil
