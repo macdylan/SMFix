@@ -2,4 +2,3 @@ dist/
 _SLIC3R_ENVS
 .vscode/
 go.work*
-go.sum
