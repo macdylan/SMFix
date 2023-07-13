@@ -27,7 +27,7 @@ type slicerParams struct {
 	NozzleTemperatures []float64
 	NozzleDiameters    []float64
 	Retractions        []float64
-	SwitchRetraction   float64
+	SwitchRetraction   []float64
 	BedTemperatures    []float64
 	FilamentTypes      []string
 	FilamentUsed       []float64 // mm
@@ -40,36 +40,6 @@ type slicerParams struct {
 	MaxY               float64
 	MaxZ               float64
 	Thumbnail          []byte
-}
-
-var Params = slicerParams{
-	Version:            0,
-	Model:              "",
-	ToolHead:           ToolheadSingle,
-	PrintMode:          PrintModeDefault,
-	LeftExtruderUsed:   false,
-	RightExtruderUsed:  false,
-	PrinterNotes:       "",
-	LayerHeight:        0,
-	TotalLayers:        0,
-	TotalLines:         0,
-	EstimatedTimeSec:   0,
-	NozzleTemperatures: []float64{-1, -1},
-	NozzleDiameters:    []float64{-1, -1},
-	Retractions:        []float64{-1, -1},
-	SwitchRetraction:   0,
-	BedTemperatures:    []float64{-1, -1},
-	FilamentTypes:      []string{"", ""},
-	FilamentUsed:       []float64{-1, -1},
-	FilamentUsedWeight: []float64{-1, -1},
-	PrintSpeedSec:      0,
-	MinX:               0,
-	MinY:               0,
-	MinZ:               0,
-	MaxX:               0,
-	MaxY:               0,
-	MaxZ:               0,
-	Thumbnail:          []byte{},
 }
 
 func (p *slicerParams) EffectiveNozzleTemperature() float64 {
@@ -95,6 +65,41 @@ func (p *slicerParams) effective(x, y float64) float64 {
 	return x
 }
 
+func NewParams() *slicerParams {
+	return &slicerParams{
+		Version:            0,
+		Model:              "",
+		ToolHead:           ToolheadSingle,
+		PrintMode:          PrintModeDefault,
+		LeftExtruderUsed:   false,
+		RightExtruderUsed:  false,
+		PrinterNotes:       "",
+		LayerHeight:        0,
+		TotalLayers:        0,
+		TotalLines:         0,
+		EstimatedTimeSec:   0,
+		NozzleTemperatures: []float64{-1, -1},
+		NozzleDiameters:    []float64{-1, -1},
+		Retractions:        []float64{-1, -1},
+		SwitchRetraction:   []float64{-1, -1},
+		BedTemperatures:    []float64{-1, -1},
+		FilamentTypes:      []string{"", ""},
+		FilamentUsed:       []float64{-1, -1},
+		FilamentUsedWeight: []float64{-1, -1},
+		PrintSpeedSec:      0,
+		MinX:               0,
+		MinY:               0,
+		MinZ:               0,
+		MaxX:               0,
+		MaxY:               0,
+		MaxZ:               0,
+		Thumbnail:          []byte{},
+	}
+
+}
+
+var Params = NewParams()
+
 func ParseParams(f io.Reader) error {
 	defer func(f io.Reader) {
 		if h, ok := f.(io.ReadSeeker); ok {
@@ -117,6 +122,7 @@ func ParseParams(f io.Reader) error {
 	)
 
 	//////// scan
+	Params = NewParams()
 	for sc.Scan() {
 		Params.TotalLines++
 
@@ -155,7 +161,7 @@ func ParseParams(f io.Reader) error {
 		} else if v, ok := getSetting(line, "retract_length", "retraction_length" /*bbs*/); ok {
 			retract_len = splitFloat(v)
 		} else if v, ok := getSetting(line, "retract_length_toolchange"); ok {
-			Params.SwitchRetraction = parseFloat(v)
+			Params.SwitchRetraction = splitFloat(v)
 		} else if v, ok := getSetting(line, "nozzle_diameter"); ok {
 			Params.NozzleDiameters = splitFloat(v)
 		} else if v, ok := getSetting(line, "layer_height", "first_layer_height"); ok && Params.LayerHeight == 0 {
