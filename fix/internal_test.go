@@ -2,6 +2,7 @@ package fix
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -147,5 +148,187 @@ func TestSplitFloat(t *testing.T) {
 	}
 	if r[1] != 789 {
 		t.Error("index 1 value is not 789, but:", r[1])
+	}
+}
+
+func TestGcodeShutoff(t *testing.T) {
+	gcode := `
+T0 ; initial tool
+T1
+T0
+M104 S0 T0
+M104 S0 T1
+G28 ; home
+M73 P100 R0 ; end
+	`
+
+	comp := strings.TrimSpace(`
+T0 ; initial tool
+T1
+T0
+M104 S0 T1 ; (Fixed: Shutoff T1)
+M104 S0 T0
+M104 S0 T1
+G28 ; home
+M73 P100 R0 ; end
+	`)
+
+	r := GcodeFixShutoff(strings.Split(gcode, "\n"))
+	str_r := strings.TrimSpace(strings.Join(r, "\n"))
+	if strings.Compare(str_r, comp) != 0 {
+		t.Error(str_r + "\n\n==== comp:\n" + comp)
+	}
+}
+
+func TestGcodePreheat(t *testing.T) {
+	gcode := `
+M109 T0 S200
+M109 T1 S210 ; prepare
+M73 P0 R60
+
+; deep freeze {{
+; standby but heat-up after 5 mins, need to be freeze >>
+M104 S154 ;standby T0
+M73 P4 R59
+; pre-heat (long) here >>
+M73 P4 R58
+M73 P4 R57
+M73 P4 R56
+M73 P4 R55
+M73 P4 R54
+M73 P4 R53
+M109 T0 S200 ; wait T0
+;}} end deep freeze
+
+; pre-heat short {{
+M73 P5 R50
+M104 S154 ;standby T1
+M73 P5 R49
+M73 P5 R48
+; standby but heat-up in 5 mins, pre heat (short) here >>
+M73 P5 R47
+M73 P5 R46
+M73 P5 R45
+M109 T1 S220 C3 W1 ;wait T1
+; }} end pre-heat short
+
+; remove cooldown {{
+M104 S178 ;standby T0 (remove)
+T1
+M109 T1 S555 C3 W1 ;wait T1
+M73 P6 R30
+M73 P6 R29
+T0
+M109 T0 S255 C3 W1 ;wait T0
+; }} end remove cooldown
+
+M104 S555 T1 ; <- already requested
+M109 T1 S100 ; <- diff temp, keep this
+M109 S100 T1; <- already stabilized
+
+; nothing to do {{
+M109 T1 S255 C3 W1 ;wait T1
+M104 T0 S0
+M104 T1 S0
+G28 ; home
+M73 P100 R0 ; end
+; }}
+	`
+
+	comp := strings.TrimSpace(`
+M109 T0 S200
+M109 T1 S210 ; prepare
+M73 P0 R60
+
+; deep freeze {{
+; standby but heat-up after 5 mins, need to be freeze >>
+M104 S120 T0 ; (Fixed: deep freeze instead of: M104 S154 ;standby T0)
+M73 P4 R59
+; pre-heat (long) here >>
+M104 T0 S200 ; wait T0(Fixed: pre-heat long)
+M73 P4 R58
+M73 P4 R57
+M73 P4 R56
+M73 P4 R55
+M73 P4 R54
+M73 P4 R53
+M109 T0 S200 ; wait T0
+;}} end deep freeze
+
+; pre-heat short {{
+M73 P5 R50
+M104 S154 ;standby T1
+M73 P5 R49
+M73 P5 R48
+; standby but heat-up in 5 mins, pre heat (short) here >>
+M104 T1 S220 C3 W1 ;wait T1(Fixed: pre-heat short)
+M73 P5 R47
+M73 P5 R46
+M73 P5 R45
+M109 T1 S220 C3 W1 ;wait T1
+; }} end pre-heat short
+
+; remove cooldown {{
+;(Fixed: remove cooldown: M104 S178 ;standby T0 (remove))
+T1
+M109 T1 S555 C3 W1 ;wait T1
+M73 P6 R30
+M73 P6 R29
+T0
+M109 T0 S255 C3 W1 ;wait T0
+; }} end remove cooldown
+
+;(Fixed: already requested temp: M104 S555 T1 ; <- already requested)
+M109 T1 S100 ; <- diff temp, keep this
+;(Fixed: already stabilized temp: M109 S100 T1; <- already stabilized)
+
+; nothing to do {{
+M109 T1 S255 C3 W1 ;wait T1
+M104 T0 S0
+M104 T1 S0
+G28 ; home
+M73 P100 R0 ; end
+; }}
+	`)
+
+	r := GcodeFixPreheat(strings.Split(gcode, "\n"))
+	str_r := strings.TrimSpace(strings.Join(r, "\n"))
+	if strings.Compare(str_r, comp) != 0 {
+		t.Error(str_r + "\n\n==== comp:\n" + comp)
+	}
+}
+
+func TestGcodeTrimLines(t *testing.T) {
+	gcode := `
+	Line 1
+Line 2
+
+  Line 3
+  ;
+
+
+Line 4
+
+
+
+
+Line 5
+
+`
+	comp := `
+Line 1
+Line 2
+
+Line 3
+;
+
+Line 4
+
+Line 5`
+
+	r := GcodeTrimLines(strings.Split(gcode, "\n"))
+	str_r := strings.Join(r, "\n")
+	if strings.Compare(str_r, comp) != 0 {
+		t.Error(str_r + "\n==== comp:" + comp)
 	}
 }

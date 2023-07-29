@@ -3,7 +3,7 @@ package fix
 import "regexp"
 
 const (
-	Mark = "; Postprocessed by smfix (https://github.com/macdylan/Snapmaker2Slic3rPostProcessor)"
+	Mark = "; Postprocessed by smfix (https://github.com/macdylan/SMFix)"
 
 	PrintModeDefault     = "Default"
 	PrintModeBackup      = "IDEX Backup"

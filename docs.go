@@ -14,7 +14,7 @@ var (
 func flag_usage() {
 	ex, _ := os.Executable()
 	usage := `Optimize G-code file for Snapmaker printers.
-%s - https://github.com/macdylan/Snapmaker2Slic3rPostProcessor
+%s - https://github.com/macdylan/SMFix
 
 Example configuration in PrusaSlicer,
 Go to Print Settings -> Output options -> Post-processing scripts:
