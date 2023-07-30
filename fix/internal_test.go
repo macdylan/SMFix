@@ -182,33 +182,28 @@ M73 P100 R0 ; end
 
 func TestGcodePreheat(t *testing.T) {
 	gcode := `
+M73 P0 R60
 M109 T0 S200
 M109 T1 S210 ; prepare
-M73 P0 R60
 
 ; deep freeze {{
 ; standby but heat-up after 5 mins, need to be freeze >>
 M104 S154 ;standby T0
-M73 P4 R59
-; pre-heat (long) here >>
-M73 P4 R58
-M73 P4 R57
-M73 P4 R56
 M73 P4 R55
+; pre-heat (long) here >>
 M73 P4 R54
 M73 P4 R53
+M73 P4 R52
+M73 P4 R51
 M109 T0 S200 ; wait T0
 ;}} end deep freeze
 
 ; pre-heat short {{
-M73 P5 R50
 M104 S154 ;standby T1
-M73 P5 R49
-M73 P5 R48
-; standby but heat-up in 5 mins, pre heat (short) here >>
-M73 P5 R47
-M73 P5 R46
-M73 P5 R45
+M73 P5 R43
+; standby but heat-up in 3 mins, pre heat (short) here >>
+M73 P5 R42
+M73 P5 R41
 M109 T1 S220 C3 W1 ;wait T1
 ; }} end pre-heat short
 
@@ -216,8 +211,7 @@ M109 T1 S220 C3 W1 ;wait T1
 M104 S178 ;standby T0 (remove)
 T1
 M109 T1 S555 C3 W1 ;wait T1
-M73 P6 R30
-M73 P6 R29
+M73 P6 R21
 T0
 M109 T0 S255 C3 W1 ;wait T0
 ; }} end remove cooldown
@@ -236,35 +230,30 @@ M73 P100 R0 ; end
 	`
 
 	comp := strings.TrimSpace(`
+M73 P0 R60
 M109 T0 S200
 M109 T1 S210 ; prepare
-M73 P0 R60
 
 ; deep freeze {{
 ; standby but heat-up after 5 mins, need to be freeze >>
-M104 S120 T0 ; (Fixed: deep freeze instead of: M104 S154 ;standby T0)
-M73 P4 R59
+M104 S110 T0 ; (Fixed: deep freeze instead of: M104 S154 ;standby T0)
+M73 P4 R55
 ; pre-heat (long) here >>
 M104 T0 S200 ; wait T0(Fixed: pre-heat long)
-M73 P4 R58
-M73 P4 R57
-M73 P4 R56
-M73 P4 R55
 M73 P4 R54
 M73 P4 R53
+M73 P4 R52
+M73 P4 R51
 M109 T0 S200 ; wait T0
 ;}} end deep freeze
 
 ; pre-heat short {{
-M73 P5 R50
 M104 S154 ;standby T1
-M73 P5 R49
-M73 P5 R48
-; standby but heat-up in 5 mins, pre heat (short) here >>
+M73 P5 R43
+; standby but heat-up in 3 mins, pre heat (short) here >>
 M104 T1 S220 C3 W1 ;wait T1(Fixed: pre-heat short)
-M73 P5 R47
-M73 P5 R46
-M73 P5 R45
+M73 P5 R42
+M73 P5 R41
 M109 T1 S220 C3 W1 ;wait T1
 ; }} end pre-heat short
 
@@ -272,8 +261,7 @@ M109 T1 S220 C3 W1 ;wait T1
 ;(Fixed: remove cooldown: M104 S178 ;standby T0 (remove))
 T1
 M109 T1 S555 C3 W1 ;wait T1
-M73 P6 R30
-M73 P6 R29
+M73 P6 R21
 T0
 M109 T0 S255 C3 W1 ;wait T0
 ; }} end remove cooldown
@@ -313,7 +301,6 @@ Line 4
 
 
 Line 5
-
 `
 	comp := `
 Line 1
@@ -324,11 +311,12 @@ Line 3
 
 Line 4
 
-Line 5`
+Line 5
+`
 
 	r := GcodeTrimLines(strings.Split(gcode, "\n"))
 	str_r := strings.Join(r, "\n")
 	if strings.Compare(str_r, comp) != 0 {
-		t.Error(str_r + "\n==== comp:" + comp)
+		t.Error("\n>>>" + str_r + "<<<\n==== comp:\n>>>" + comp + "<<<\n")
 	}
 }

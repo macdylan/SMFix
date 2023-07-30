@@ -53,8 +53,8 @@ func GcodeFixShutoff(gcodes []string) (output []string) {
 }
 
 var (
-	PreheatShort = 2
-	PreheatLong  = 5
+	PreheatShort = 1
+	PreheatLong  = 3
 )
 
 func GcodeFixPreheat(gcodes []string) (output []string) {
@@ -101,7 +101,7 @@ func GcodeFixPreheat(gcodes []string) (output []string) {
 							output = append(output[:nShortPreheat], append([]string{preheat + "(Fixed: pre-heat short)"}, output[nShortPreheat:]...)...)
 						} else {
 							output = append(output[:nLongPreheat], append([]string{preheat + "(Fixed: pre-heat long)"}, output[nLongPreheat:]...)...)
-							output[n] = "M104 S120 " + tool + " ; (Fixed: deep freeze instead of: " + checkLine + ")"
+							output[n] = "M104 S110 " + tool + " ; (Fixed: deep freeze instead of: " + checkLine + ")"
 						}
 					}
 					break
@@ -171,18 +171,17 @@ func GcodeFixPreheat(gcodes []string) (output []string) {
 }
 
 func GcodeTrimLines(gcodes []string) (output []string) {
-	blank := 0
+	blank := false
 	for _, line := range gcodes {
 		line = strings.TrimSpace(line)
 		if line == "" {
-			blank++
-			continue
-		} else {
-			if blank > 0 {
-				line = "\n" + line
-				blank = 0
+			if !blank {
+				output = append(output, line)
+				blank = true
 			}
+		} else {
 			output = append(output, line)
+			blank = false
 		}
 	}
 	return output
