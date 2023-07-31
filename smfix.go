@@ -4,10 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"flag"
-	"io"
 	"log"
 	"os"
-	"strings"
 
 	"github.com/macdylan/SMFix/fix"
 )
@@ -43,64 +41,58 @@ func main() {
 		flag_usage()
 	}
 
+	if OutputPath == "" {
+		OutputPath = in.Name()
+	}
+
 	var headers [][]byte
 	if headers, err = fix.ExtractHeader(in); err != nil {
 		log.Fatalf("Parse params failed: %s", err)
 	}
 
-	// write headers
 	tmpfile, err := os.CreateTemp("", "smfix")
 	if err != nil {
 		log.Fatalf("Can not create temp file: %s", err)
 	}
 
+	gcodes := make([]string, 0, fix.Params.TotalLines+len(headers)+128)
+	sc := bufio.NewScanner(in)
+	for sc.Scan() {
+		gcodes = append(gcodes, sc.Text())
+	}
+	in.Close()
+	if err := sc.Err(); err != nil {
+		log.Fatalf("Read input file error: %s", err)
+	}
+
+	// fix gcodes
+	if !noTrim {
+		gcodes = fix.GcodeTrimLines(gcodes)
+	}
+	if !noShutoff {
+		gcodes = fix.GcodeFixShutoff(gcodes)
+	}
+	if !noPreheat {
+		gcodes = fix.GcodeFixPreheat(gcodes)
+	}
+
+	// write headers
 	if _, err := tmpfile.Write(bytes.Join(headers, []byte("\n"))); err != nil {
 		log.Fatalln(err)
 	}
 
-	// 4. append raw gcodes
-	if _, err := io.Copy(tmpfile, in); err != nil {
-		log.Fatalf("Can not write gcodes: %s", err)
+	// write gcodes
+	for _, gcode := range gcodes {
+		if _, err := tmpfile.WriteString(gcode + "\n"); err != nil {
+			log.Fatalln(err)
+		}
 	}
 
 	if err := tmpfile.Close(); err != nil {
 		log.Fatalf("Temp file error: %s", err)
 	}
 
-	// 5. fix gcodes
-	if !noTrim || !noPreheat || !noShutoff {
-		gcodes := make([]string, 0, fix.Params.TotalLines+len(headers)+128)
-
-		f, _ := os.Open(tmpfile.Name())
-		defer f.Close()
-
-		sc := bufio.NewScanner(f)
-		for sc.Scan() {
-			gcodes = append(gcodes, sc.Text())
-		}
-		if err := sc.Err(); err != nil {
-			log.Fatalf("Read temp file error: %s", err)
-		}
-
-		if len(gcodes) > 30 {
-			if !noTrim {
-				gcodes = fix.GcodeTrimLines(gcodes)
-			}
-			if !noShutoff {
-				gcodes = fix.GcodeFixShutoff(gcodes)
-			}
-			if !noPreheat {
-				gcodes = fix.GcodeFixPreheat(gcodes)
-			}
-			os.WriteFile(tmpfile.Name(), []byte(strings.Join(gcodes, "\n")), 0644)
-		}
-	}
-
-	// 6. finally, move tmpfile to in
-	in.Close()
-	if OutputPath == "" {
-		OutputPath = in.Name()
-	}
+	// finally, move tmpfile to in
 	if err := os.Rename(tmpfile.Name(), OutputPath); err != nil {
 		log.Fatalf("Error: %s", err)
 	}
