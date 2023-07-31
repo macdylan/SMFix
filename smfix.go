@@ -31,28 +31,20 @@ func main() {
 		err error
 	)
 	if len(flag.Args()) > 0 {
-		in, err = os.Open(flag.Arg(0))
+		in, err = os.OpenFile(flag.Arg(0), os.O_RDONLY, 0666)
 		if err != nil {
 			log.Fatalln(err)
 		}
+		defer in.Close()
 	}
 
 	if in == nil {
 		flag_usage()
 	}
 
-	if OutputPath == "" {
-		OutputPath = in.Name()
-	}
-
 	var headers [][]byte
 	if headers, err = fix.ExtractHeader(in); err != nil {
 		log.Fatalf("Parse params failed: %s", err)
-	}
-
-	tmpfile, err := os.CreateTemp("", "smfix")
-	if err != nil {
-		log.Fatalf("Can not create temp file: %s", err)
 	}
 
 	gcodes := make([]string, 0, fix.Params.TotalLines+len(headers)+128)
@@ -76,24 +68,25 @@ func main() {
 		gcodes = fix.GcodeFixPreheat(gcodes)
 	}
 
+	// prepare for output file
+	if len(OutputPath) == 0 {
+		OutputPath = flag.Arg(0)
+	}
+	out, err := os.Create(OutputPath)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer out.Close()
+
 	// write headers
-	if _, err := tmpfile.Write(bytes.Join(headers, []byte("\n"))); err != nil {
+	if _, err := out.Write(bytes.Join(headers, []byte("\n"))); err != nil {
 		log.Fatalln(err)
 	}
 
 	// write gcodes
 	for _, gcode := range gcodes {
-		if _, err := tmpfile.WriteString(gcode + "\n"); err != nil {
+		if _, err := out.WriteString(gcode + "\n"); err != nil {
 			log.Fatalln(err)
 		}
-	}
-
-	if err := tmpfile.Close(); err != nil {
-		log.Fatalf("Temp file error: %s", err)
-	}
-
-	// finally, move tmpfile to in
-	if err := os.Rename(tmpfile.Name(), OutputPath); err != nil {
-		log.Fatalf("Error: %s", err)
 	}
 }
