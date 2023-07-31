@@ -154,22 +154,36 @@ func TestSplitFloat(t *testing.T) {
 func TestGcodeShutoff(t *testing.T) {
 	gcode := `
 T0 ; initial tool
+M104 S200 T1
 T1
+M104 S200 T1
 T0
+M104 S100 T1 ; (remove useless)
+
+M104 S200 T0
+M104 S200 T1 ; (remove useless)
+M109 S200 T1 ; (remove useless)
+
 M104 S0 T0
-M104 S0 T1
-G28 ; home
+M104 S0 T1 ; (keep)
 M73 P100 R0 ; end
 	`
 
 	comp := strings.TrimSpace(`
 T0 ; initial tool
+M104 S200 T1
 T1
+M104 S200 T1
 T0
 M104 S0 T1 ; (Fixed: Shutoff T1)
+;(Fixed: T1 has been shutted off: M104 S100 T1 ; (remove useless))
+
+M104 S200 T0
+;(Fixed: T1 has been shutted off: M104 S200 T1 ; (remove useless))
+;(Fixed: T1 has been shutted off: M109 S200 T1 ; (remove useless))
+
 M104 S0 T0
-M104 S0 T1
-G28 ; home
+M104 S0 T1 ; (keep)
 M73 P100 R0 ; end
 	`)
 

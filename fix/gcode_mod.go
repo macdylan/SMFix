@@ -2,6 +2,7 @@ package fix
 
 import (
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -21,6 +22,7 @@ var (
 func GcodeFixShutoff(gcodes []string) (output []string) {
 	// track of the last line each tool was used
 	toolLastLine := make(map[string]int)
+	toolShutted := make(map[string]bool)
 
 	// look for tool changes
 	for n, line := range gcodes {
@@ -32,7 +34,10 @@ func GcodeFixShutoff(gcodes []string) (output []string) {
 	}
 
 	// add M104 S0
-	var curTool string
+	var (
+		curTool string
+		offset  int
+	)
 	for n, line := range gcodes {
 		output = append(output, line)
 
@@ -43,9 +48,34 @@ func GcodeFixShutoff(gcodes []string) (output []string) {
 			if curTool != "" && curTool != nextTool {
 				if toolLastLine[curTool] < n {
 					output = append(output, "M104 S0 "+curTool+" ; (Fixed: Shutoff "+curTool+")")
+					toolShutted[curTool] = true
+					offset++
 				}
 			}
 			curTool = nextTool
+		}
+
+		tempMatch := reTemp.FindStringSubmatch(line)
+		if len(tempMatch) > 0 {
+			// cmd := tempMatch[1]
+			var (
+				tool string
+				temp int
+			)
+			if strings.HasPrefix(tempMatch[2], "S") && strings.HasPrefix(tempMatch[3], "T") {
+				// M104 S255 T1
+				tool = tempMatch[3]
+				temp, _ = strconv.Atoi(tempMatch[2][1:])
+			} else {
+				// M104 T1 S255
+				tool = tempMatch[2]
+				temp, _ = strconv.Atoi(tempMatch[3][1:])
+			}
+			if temp > 0 && n > toolLastLine[tool] && toolShutted[tool] {
+				for i := n + offset; i > n; i-- {
+					output[i] = ";(Fixed: " + tool + " has been shutted off: " + output[i] + ")"
+				}
+			}
 		}
 	}
 
@@ -128,7 +158,8 @@ func GcodeFixPreheat(gcodes []string) (output []string) {
 	}
 
 	if !hasM73 {
-		return output
+		// Do not modify anything if there is no M73
+		return gcodes
 	}
 
 	// remove any unnecessary M104 and 109 commands
