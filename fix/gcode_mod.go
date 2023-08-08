@@ -15,11 +15,17 @@ var (
 	reM104 = regexp.MustCompile(`^\s*M104 .*(?P<tool>T[\d]+).*`)
 	// M73 progress update command
 	reM73 = regexp.MustCompile(`^\s*M73 .*(?P<remain>R[\d]+).*`)
+	// G4 S0 needs to be removed
+	reG4S0 = regexp.MustCompile(`^\s*G4\s+[SP]0.*`)
+	// G1 for prime tower
+	reG1 = regexp.MustCompile(`^\s*G1 .*(?P<arg1>[EF][\d\.]+).+(?P<arg2>[EF][\d\.]+).*`)
 
 	reTemp = regexp.MustCompile(`^\s*(?P<cmd>M10[49]) .*(?P<arg1>[ST][\d]+).*(?P<arg2>[ST][\d]+).*`)
 )
 
 func GcodeFixShutoff(gcodes []string) (output []string) {
+	output = make([]string, 0, len(gcodes)+8)
+
 	// track of the last line each tool was used
 	toolLastLine := make(map[string]int)
 	toolShutted := make(map[string]bool)
@@ -88,6 +94,8 @@ var (
 )
 
 func GcodeFixPreheat(gcodes []string) (output []string) {
+	output = make([]string, 0, len(gcodes)+512)
+
 	hasM73 := false // must enable "Supports remaining times" in the Printer settings
 	for _, line := range gcodes {
 		output = append(output, line)
@@ -202,6 +210,8 @@ func GcodeFixPreheat(gcodes []string) (output []string) {
 }
 
 func GcodeTrimLines(gcodes []string) (output []string) {
+	output = make([]string, 0, len(gcodes))
+
 	blank := false
 	for _, line := range gcodes {
 		line = strings.TrimSpace(line)
@@ -210,10 +220,54 @@ func GcodeTrimLines(gcodes []string) (output []string) {
 				output = append(output, line)
 				blank = true
 			}
+		} else if reG4S0.MatchString(line) {
+			// skip G4 S0 commands
+			continue
 		} else {
 			output = append(output, line)
 			blank = false
 		}
+	}
+	return output
+}
+
+func GcodeReinforceTower(gcodes []string) (output []string) {
+	output = make([]string, 0, len(gcodes)+2048)
+
+	var (
+		wiping bool
+		e      float64
+		f      float64
+		cmd    string
+	)
+	for _, line := range gcodes {
+		if strings.HasPrefix(line, "; CP TOOLCHANGE WIPE") {
+			wiping = true
+		}
+		if strings.HasPrefix(line, "; CP TOOLCHANGE END") {
+			wiping = false
+		}
+		if wiping {
+			efMatch := reG1.FindStringSubmatch(line)
+			if len(efMatch) > 0 {
+				if strings.HasPrefix(efMatch[1], "E") && strings.HasPrefix(efMatch[2], "F") {
+					e, _ = strconv.ParseFloat(efMatch[1][1:], 64)
+					f, _ = strconv.ParseFloat(efMatch[2][1:], 64)
+				} else {
+					f, _ = strconv.ParseFloat(efMatch[1][1:], 64)
+					e, _ = strconv.ParseFloat(efMatch[2][1:], 64)
+				}
+				if e > 0.0 {
+					e = e / 2.0 // half is enough for fusion
+				}
+				if f > 0.0 {
+					f = f / 3.0 * 2.0
+				}
+				cmd = "G1 E" + strconv.FormatFloat(e, 'f', 4, 64) + " F" + strconv.FormatFloat(f, 'f', 0, 64) + " ; (Fixed: stabilization tower)"
+				output = append(output, cmd)
+			}
+		}
+		output = append(output, line)
 	}
 	return output
 }

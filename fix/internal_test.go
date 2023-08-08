@@ -308,6 +308,10 @@ Line 2
   Line 3
   ;
 
+  G4 S0
+  G4 P100
+
+G4 S0 ; comments
 
 Line 4
 
@@ -323,12 +327,72 @@ Line 2
 Line 3
 ;
 
+G4 P100
+
 Line 4
 
 Line 5
 `
 
 	r := GcodeTrimLines(strings.Split(gcode, "\n"))
+	str_r := strings.Join(r, "\n")
+	if strings.Compare(str_r, comp) != 0 {
+		t.Error("\n>>>" + str_r + "<<<\n==== comp:\n>>>" + comp + "<<<\n")
+	}
+}
+
+func TestGcodeReinforceTower(t *testing.T) {
+	gcodes := `
+G1  X176.579  E1.2970 F1584
+; CP TOOLCHANGE WIPE
+G1  X176.579  E1.2970 F1584
+G1  Y31.500  E0.1900
+G1  X142.329  E1.3017 F1800
+G1  Y36.500  E0.1900
+G1  X176.579  E1.3017 F2198
+G1 F19200
+G92 E0
+; CP TOOLCHANGE END
+G1  X176.579  E1.2970 F1584
+; CP TOOLCHANGE WIPE
+M73 R80
+G1  X176.579  E1.2970 F1584
+G1  Y31.500  E0.1900
+G1  X176.579  E1.3017 F2198
+G1 F19200
+G92 E0
+; CP TOOLCHANGE END
+G1  X176.579  E1.2970 F1584
+`
+	comp := `
+G1  X176.579  E1.2970 F1584
+; CP TOOLCHANGE WIPE
+G1 E0.6485 F1056 ; (Fixed: stabilization tower)
+G1  X176.579  E1.2970 F1584
+G1  Y31.500  E0.1900
+G1 E0.6509 F1200 ; (Fixed: stabilization tower)
+G1  X142.329  E1.3017 F1800
+G1  Y36.500  E0.1900
+G1 E0.6509 F1465 ; (Fixed: stabilization tower)
+G1  X176.579  E1.3017 F2198
+G1 F19200
+G92 E0
+; CP TOOLCHANGE END
+G1  X176.579  E1.2970 F1584
+; CP TOOLCHANGE WIPE
+M73 R80
+G1 E0.6485 F1056 ; (Fixed: stabilization tower)
+G1  X176.579  E1.2970 F1584
+G1  Y31.500  E0.1900
+G1 E0.6509 F1465 ; (Fixed: stabilization tower)
+G1  X176.579  E1.3017 F2198
+G1 F19200
+G92 E0
+; CP TOOLCHANGE END
+G1  X176.579  E1.2970 F1584
+`
+
+	r := GcodeReinforceTower(strings.Split(gcodes, "\n"))
 	str_r := strings.Join(r, "\n")
 	if strings.Compare(str_r, comp) != 0 {
 		t.Error("\n>>>" + str_r + "<<<\n==== comp:\n>>>" + comp + "<<<\n")
