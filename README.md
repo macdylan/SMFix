@@ -1,8 +1,12 @@
+![Build](https://github.com/macdylan/SMFix/actions/workflows/go.yml/badge.svg)
+
 A Snapmaker2 G-Code Post Processor for PrusaSlicer/SuperSlicer/OrcaSlicer to create compatible files for Snapmaker printers.
 
-- Optimized gcode for printing on Snapmaker 2 (no scanning)
-- Model thumbnails are displayed on touchscreen
+- Add printing information to the gcode for the touchscreen (no more scanning)
+- Convert model thumbnails to the specified format for Snapmaker printers
 - Smart pre-heat for switch tools, shutoff nozzles that are no longer in use, and other optimization features for multi-extruders.
+- Reinforce the prime tower to avoid it collapse for multi-filament printing
+- Support Snapmaker 2 A150/250/350, J1, Artisan
 - Support for multiple platforms including win/macOS/Linux
 
 ## Install
@@ -32,6 +36,8 @@ Please refer to the [Quick Setup Guide](https://github.com/macdylan/sm2uploader/
 - 优化 Gcode 文件，写入必要的元信息，避免打印机扫描整个文件以至于失去响应
 - 在打印机屏幕显示出模型的图片
 - 为多挤出机提供智能预热、关闭不再使用的喷头等优化功能
+- 强化擦料塔，避免多材料打印时因不粘合而倒塌，例如在 PETG+PLA 混合打印时
+- 支持 Snapmaker 2 AF/J1/Artisan 全系列打印机
 - 支持平台 Win/macOS/Linux
 
 ## 安装说明：

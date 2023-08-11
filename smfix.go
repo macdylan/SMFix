@@ -11,10 +11,11 @@ import (
 )
 
 var (
-	OutputPath string
-	noTrim     bool
-	noShutoff  bool
-	noPreheat  bool
+	OutputPath       string
+	noTrim           bool
+	noShutoff        bool
+	noPreheat        bool
+	noReinforceTower bool
 )
 
 func init() {
@@ -22,6 +23,7 @@ func init() {
 	flag.BoolVar(&noTrim, "notrim", false, "do not trim spaces in the gcode")
 	flag.BoolVar(&noShutoff, "noshutoff", false, "do not shutoff nozzles that are no longer in use")
 	flag.BoolVar(&noPreheat, "nopreheat", false, "do not pre-heat nozzles")
+	flag.BoolVar(&noReinforceTower, "noreinforcetower", false, "do not reinforce the prime tower")
 	flag.Parse()
 }
 
@@ -66,6 +68,9 @@ func main() {
 	}
 	if !noPreheat {
 		gcodes = fix.GcodeFixPreheat(gcodes)
+	}
+	if !noReinforceTower {
+		gcodes = fix.GcodeReinforceTower(gcodes)
 	}
 
 	// prepare for output file
