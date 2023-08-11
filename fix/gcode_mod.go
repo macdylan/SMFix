@@ -19,7 +19,9 @@ var (
 	reG4S0 = regexp.MustCompile(`^\s*G4\s+[SP]0.*`)
 	// G1 for prime tower
 	reG1 = regexp.MustCompile(`^\s*G1 .*(?P<arg1>[EF][\d\.]+).+(?P<arg2>[EF][\d\.]+).*`)
-
+	// ;Z:height
+	reZ = regexp.MustCompile(`^;Z:(?P<height>[\d\.]+)`)
+	// M104/109 S100 T1
 	reTemp = regexp.MustCompile(`^\s*(?P<cmd>M10[49]) .*(?P<arg1>[ST][\d]+).*(?P<arg2>[ST][\d]+).*`)
 )
 
@@ -239,6 +241,7 @@ func GcodeReinforceTower(gcodes []string) (output []string) {
 		e      float64
 		f      float64
 		cmd    string
+		z      float64
 	)
 	for _, line := range gcodes {
 		if strings.HasPrefix(line, "; CP TOOLCHANGE WIPE") {
@@ -246,24 +249,33 @@ func GcodeReinforceTower(gcodes []string) (output []string) {
 		}
 		if strings.HasPrefix(line, "; CP TOOLCHANGE END") {
 			wiping = false
+			e = 0.0
 		}
-		if wiping {
+		if strings.HasPrefix(line, ";Z:") {
+			zMatch := reZ.FindStringSubmatch(line)
+			if len(zMatch) > 0 {
+				z, _ = strconv.ParseFloat(zMatch[1], 64)
+			}
+		}
+		if wiping && z > 0.3 {
 			efMatch := reG1.FindStringSubmatch(line)
 			if len(efMatch) > 0 {
-				if strings.HasPrefix(efMatch[1], "E") && strings.HasPrefix(efMatch[2], "F") {
-					e, _ = strconv.ParseFloat(efMatch[1][1:], 64)
-					f, _ = strconv.ParseFloat(efMatch[2][1:], 64)
-				} else {
-					f, _ = strconv.ParseFloat(efMatch[1][1:], 64)
-					e, _ = strconv.ParseFloat(efMatch[2][1:], 64)
+				if e < 0.01 {
+					if strings.HasPrefix(efMatch[1], "E") && strings.HasPrefix(efMatch[2], "F") {
+						e, _ = strconv.ParseFloat(efMatch[1][1:], 64)
+						f, _ = strconv.ParseFloat(efMatch[2][1:], 64)
+					} else {
+						f, _ = strconv.ParseFloat(efMatch[1][1:], 64)
+						e, _ = strconv.ParseFloat(efMatch[2][1:], 64)
+					}
+					if e > 0.0 {
+						e = e * 0.45
+					}
+					// if f > 0.0 {
+					// 	f = f * 0.7
+					// }
 				}
-				if e > 0.0 {
-					e = e / 2.0 // half is enough for fusion
-				}
-				if f > 0.0 {
-					f = f / 3.0 * 2.0
-				}
-				cmd = "G1 E" + strconv.FormatFloat(e, 'f', 4, 64) + " F" + strconv.FormatFloat(f, 'f', 0, 64) + " ; (Fixed: stabilization tower)"
+				cmd = "G1 E" + strconv.FormatFloat(e, 'f', 4, 64) + " F" + strconv.FormatFloat(f, 'f', 0, 64) + " ; (Fixed: reinforce tower)"
 				output = append(output, cmd)
 			}
 		}
