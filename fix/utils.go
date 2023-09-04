@@ -2,8 +2,10 @@ package fix
 
 import (
 	"bytes"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 func split(s string) []string {
@@ -81,8 +83,12 @@ func parseInt(s string) int {
 }
 
 func getSetting(s string, key ...string) (v string, ok bool) {
-	if s[0] == ';' {
+	strlen := len(s)
+	if strlen > 5 && s[0] == ';' {
 		for _, p := range key {
+			if strlen < len(p)+4 {
+				continue
+			}
 			prefix := "; " + p + " ="
 			if strings.HasPrefix(s, prefix) {
 				return strings.TrimSpace(s[len(prefix):]), true
@@ -90,4 +96,17 @@ func getSetting(s string, key ...string) (v string, ok bool) {
 		}
 	}
 	return "", false
+}
+
+func GoInParallelAndWait(work func(wi, wn int)) {
+	var wg sync.WaitGroup
+	wn := runtime.NumCPU()
+	for wi := 0; wi < wn; wi++ {
+		wg.Add(1)
+		go func(wi, wn int) {
+			work(wi, wn)
+			wg.Done()
+		}(wi, wn)
+	}
+	wg.Wait()
 }

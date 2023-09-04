@@ -6,6 +6,7 @@ import (
 	"flag"
 	"log"
 	"os"
+	"runtime"
 
 	"github.com/macdylan/SMFix/fix"
 )
@@ -28,6 +29,9 @@ func init() {
 }
 
 func main() {
+	numCPU := runtime.NumCPU()
+	runtime.GOMAXPROCS(numCPU)
+
 	var (
 		in  *os.File
 		err error
@@ -60,17 +64,22 @@ func main() {
 	}
 
 	// fix gcodes
+	funcs := make([]func([]string) []string, 0, 4)
 	if !noTrim {
-		gcodes = fix.GcodeTrimLines(gcodes)
+		funcs = append(funcs, fix.GcodeTrimLines)
 	}
 	if !noShutoff {
-		gcodes = fix.GcodeFixShutoff(gcodes)
+		funcs = append(funcs, fix.GcodeFixShutoff)
 	}
 	if !noPreheat {
-		gcodes = fix.GcodeFixPreheat(gcodes)
+		funcs = append(funcs, fix.GcodeFixPreheat)
 	}
 	if !noReinforceTower {
-		gcodes = fix.GcodeReinforceTower(gcodes)
+		funcs = append(funcs, fix.GcodeReinforceTower)
+	}
+
+	for _, fn := range funcs {
+		gcodes = fn(gcodes)
 	}
 
 	// prepare for output file

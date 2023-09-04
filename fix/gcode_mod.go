@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 var (
@@ -26,20 +27,42 @@ var (
 )
 
 func GcodeFixShutoff(gcodes []string) (output []string) {
-	output = make([]string, 0, len(gcodes)+8)
+	nGcodes := len(gcodes)
+	output = make([]string, 0, nGcodes+8)
 
 	// track of the last line each tool was used
 	toolLastLine := make(map[string]int)
 	toolShutted := make(map[string]bool)
+	mutex := sync.Mutex{}
 
 	// look for tool changes
-	for n, line := range gcodes {
-		toolMatch := reToolchange.FindStringSubmatch(line)
-		if len(toolMatch) > 0 {
-			tool := toolMatch[1]
-			toolLastLine[tool] = n
+	work := func(wi, wn int) {
+		for n := wi; n < nGcodes; n += wn {
+			line := gcodes[n]
+			if len(line) < 2 || line[0] == ';' {
+				continue
+			}
+			toolMatch := reToolchange.FindStringSubmatch(line)
+			if len(toolMatch) > 0 {
+				tool := toolMatch[1]
+				mutex.Lock()
+				if toolLastLine[tool] < n {
+					toolLastLine[tool] = n
+				}
+				mutex.Unlock()
+			}
 		}
 	}
+	GoInParallelAndWait(work)
+	/*
+		for n, line := range gcodes {
+			toolMatch := reToolchange.FindStringSubmatch(line)
+			if len(toolMatch) > 0 {
+				tool := toolMatch[1]
+				toolLastLine[tool] = n
+			}
+		}
+	*/
 
 	// add M104 S0
 	var (
@@ -213,21 +236,15 @@ func GcodeFixPreheat(gcodes []string) (output []string) {
 
 func GcodeTrimLines(gcodes []string) (output []string) {
 	output = make([]string, 0, len(gcodes))
-
-	blank := false
+	prevLineEmpty := false
 	for _, line := range gcodes {
 		line = strings.TrimSpace(line)
-		if line == "" {
-			if !blank {
-				output = append(output, line)
-				blank = true
+		if !reG4S0.MatchString(line) {
+			if line == "" && prevLineEmpty {
+				continue
 			}
-		} else if reG4S0.MatchString(line) {
-			// skip G4 S0 commands
-			continue
-		} else {
 			output = append(output, line)
-			blank = false
+			prevLineEmpty = (line == "")
 		}
 	}
 	return output
