@@ -13,9 +13,9 @@ const (
 	ToolheadSingle = "singleExtruderToolheadForSM2"
 	ToolheadDual   = "dualExtruderToolheadForSM2"
 
-	ModelA150 = "A150"
-	ModelA250 = "A250"
-	ModelA350 = "A350"
+	ModelA150 = "Snapmaker 2.0 A150"
+	ModelA250 = "Snapmaker 2.0 A250"
+	ModelA350 = "Snapmaker 2.0 A350"
 	ModelA400 = "A400"
 	ModelJ1   = "Snapmaker J1"
 )

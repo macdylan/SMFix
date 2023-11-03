@@ -255,6 +255,10 @@ func ParseParams(f io.Reader) error {
 		Params.Version = 0
 	}
 
+	if strings.Contains(Params.PrinterNotes, "_DUAL") {
+		Params.ToolHead = ToolheadDual
+	}
+
 	{
 		// printer model && slicer version
 		var models = map[string]string{
