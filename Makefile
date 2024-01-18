@@ -8,35 +8,34 @@ endif
 FLAGS = -ldflags="-w -s $(VERSION)"
 CMD = go build -trimpath $(FLAGS)
 DIST = dist/
-SRC = $(shell ls *.go | grep -v _test.go)
 
-darwin-arm64: $(SRC)
+darwin-arm64:
 	GOOS=darwin GOARCH=arm64 \
-		 $(CMD) -o $(DIST)$(PROJNAME)-$@ $^
+		 $(CMD) -o $(DIST)$(PROJNAME)-$@
 
-darwin-amd64: $(SRC)
+darwin-amd64:
 	GOOS=darwin GOARCH=amd64 \
-		 $(CMD) -o $(DIST)$(PROJNAME)-$@ $^
+		 $(CMD) -o $(DIST)$(PROJNAME)-$@
 
-linux-amd64: $(SRC)
+linux-amd64:
 	GOOS=linux GOARCH=amd64 \
-		 $(CMD) -o $(DIST)$(PROJNAME)-$@ $^
+		 $(CMD) -o $(DIST)$(PROJNAME)-$@
 
-linux-arm7: $(SRC)
+linux-arm7:
 	GOOS=linux GOARCH=arm GOARM=7 \
-		 $(CMD) -o $(DIST)$(PROJNAME)-$@ $^
+		 $(CMD) -o $(DIST)$(PROJNAME)-$@
 
-linux-arm6: $(SRC)
+linux-arm6:
 	GOOS=linux GOARCH=arm GOARM=6 \
-		 $(CMD) -o $(DIST)$(PROJNAME)-$@ $^
+		 $(CMD) -o $(DIST)$(PROJNAME)-$@
 
-win64: $(SRC)
+win64:
 	GOOS=windows GOARCH=amd64 \
-		 $(CMD) -o $(DIST)$(PROJNAME)-$@.exe $^
+		 $(CMD) -o $(DIST)$(PROJNAME)-$@.exe
 
-win32: $(SRC)
+win32:
 	GOOS=windows GOARCH=386 \
-		 $(CMD) -o $(DIST)$(PROJNAME)-$@.exe $^
+		 $(CMD) -o $(DIST)$(PROJNAME)-$@.exe
 
 dep: # Get the dependencies
 	go mod download
@@ -53,4 +52,14 @@ clean:
 	rm -f $(DIST)$(PROJNAME)-*
 
 test:
-	go test -v $(SRC) smfix_test.go
+	go test ./fix/...
+
+pprof:
+	GOOS=darwin GOARCH=arm64 \
+		 $(CMD) -tags pprof -o $(DIST)$(PROJNAME)-pprof
+
+benchmark:
+	go test -bench=. -memprofile=dist/bench_mem.pprof ./fix/...
+
+pprof-http-mem:
+	go tool pprof -http=:8080 $(DIST)mem.pprof

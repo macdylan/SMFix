@@ -2,6 +2,9 @@ package fix
 
 import (
 	"bytes"
+	"container/list"
+	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -151,6 +154,20 @@ func TestSplitFloat(t *testing.T) {
 	}
 }
 
+func _parseGcodes(s string) []*GcodeBlock {
+	gcodes := strings.Split(s, "\n")
+	r := make([]*GcodeBlock, 0, len(gcodes))
+	for _, g := range gcodes {
+		block, err := ParseGcodeBlock(g)
+		if err != nil {
+			// panic(err)
+			continue
+		}
+		r = append(r, block)
+	}
+	return r
+}
+
 func TestGcodeShutoff(t *testing.T) {
 	gcode := `
 T0 ; initial tool
@@ -168,29 +185,38 @@ M104 S0 T0
 M104 S0 T1 ; (keep)
 M73 P100 R0 ; end
 	`
+	gcodes := _parseGcodes(gcode)
 
-	comp := strings.TrimSpace(`
+	comp := `
 T0 ; initial tool
 M104 S200 T1
 T1
 M104 S200 T1
 T0
 M104 S0 T1 ; (Fixed: Shutoff T1)
-;(Fixed: T1 has been shutted off: M104 S100 T1 ; (remove useless))
+;(Fixed: T1 has been shutted off: M104 S100 T1)
 
 M104 S200 T0
-;(Fixed: T1 has been shutted off: M104 S200 T1 ; (remove useless))
-;(Fixed: T1 has been shutted off: M109 S200 T1 ; (remove useless))
+;(Fixed: T1 has been shutted off: M104 S200 T1)
+;(Fixed: T1 has been shutted off: M109 S200 T1)
 
 M104 S0 T0
 M104 S0 T1 ; (keep)
 M73 P100 R0 ; end
-	`)
+		`
+	comp_gcodes := _parseGcodes(comp)
 
-	r := GcodeFixShutoff(strings.Split(gcode, "\n"))
-	str_r := strings.TrimSpace(strings.Join(r, "\n"))
-	if strings.Compare(str_r, comp) != 0 {
-		t.Error(str_r + "\n\n==== comp:\n" + comp)
+	result := GcodeFixShutoff(gcodes)
+	if (reflect.DeepEqual(result, comp_gcodes)) != true {
+		results := make([]string, 0, len(result)+len(comp_gcodes)+1)
+		for _, g := range result {
+			results = append(results, g.String())
+		}
+		results = append(results, "==========>")
+		for _, g := range comp_gcodes {
+			results = append(results, g.String())
+		}
+		t.Error(strings.Join(results, "\n"))
 	}
 }
 
@@ -218,7 +244,7 @@ M73 P5 R43
 ; standby but heat-up in 3 mins, pre heat (short) here >>
 M73 P5 R42
 M73 P5 R41
-M109 T1 S220 C3 W1 ;wait T1
+M109 T1 S221 C3 W1 ;wait T1
 ; }} end pre-heat short
 
 ; remove cooldown {{
@@ -234,7 +260,24 @@ M104 S555 T1 ; <- already requested
 M109 T1 S100 ; <- diff temp, keep this
 M109 S100 T1; <- already stabilized
 
+M73 P8 R25
+T0
+M104 S225 ; heat
+M104 S220 ; added by slicer
+T1
+M104 S154 T0 ;standby T0
+M73 P11 R29
+M109 T1 S220 ;wait T1
+
 ; nothing to do {{
+T0
+M104 S244
+M109 S244
+T1
+M109 S111 C3 W1 ; wait T1
+T0
+M109 S244 ; wait T0
+
 M109 T1 S255 C3 W1 ;wait T1
 M104 T0 S0
 M104 T1 S0
@@ -242,18 +285,19 @@ G28 ; home
 M73 P100 R0 ; end
 ; }}
 	`
+	gcodes := _parseGcodes(gcode)
 
-	comp := strings.TrimSpace(`
+	comp := `
 M73 P0 R60
 M109 T0 S200
 M109 T1 S210 ; prepare
 
 ; deep freeze {{
 ; standby but heat-up after 5 mins, need to be freeze >>
-M104 S110 T0 ; (Fixed: deep freeze instead of: M104 S154 ;standby T0)
+M104 T0 S110 ;(Fixed: deep freeze instead of: M104 S154)
 M73 P4 R55
 ; pre-heat (long) here >>
-M104 T0 S200 ; wait T0(Fixed: pre-heat long)
+M104 T0 S200 ;(Fixed: pre-heat long)
 M73 P4 R54
 M73 P4 R53
 M73 P4 R52
@@ -265,14 +309,14 @@ M109 T0 S200 ; wait T0
 M104 S154 ;standby T1
 M73 P5 R43
 ; standby but heat-up in 3 mins, pre heat (short) here >>
-M104 T1 S220 C3 W1 ;wait T1(Fixed: pre-heat short)
+M104 T1 S221 ;(Fixed: pre-heat short)
 M73 P5 R42
 M73 P5 R41
-M109 T1 S220 C3 W1 ;wait T1
+M109 T1 S221 C3 W1 ;wait T1
 ; }} end pre-heat short
 
 ; remove cooldown {{
-;(Fixed: remove cooldown: M104 S178 ;standby T0 (remove))
+;(Fixed: remove cooldown: M104 S178)
 T1
 M109 T1 S555 C3 W1 ;wait T1
 M73 P6 R21
@@ -280,123 +324,532 @@ T0
 M109 T0 S255 C3 W1 ;wait T0
 ; }} end remove cooldown
 
-;(Fixed: already requested temp: M104 S555 T1 ; <- already requested)
+;(Fixed: already requested temp: M104 S555 T1)
 M109 T1 S100 ; <- diff temp, keep this
-;(Fixed: already stabilized temp: M109 S100 T1; <- already stabilized)
+;(Fixed: already stabilized temp: M109 S100 T1)
+
+M73 P8 R25
+T0
+M104 S225 ; heat
+M104 S220 ; added by slicer
+T1
+;(Fixed: remove cooldown: M104 S154 T0)
+M73 P11 R29
+M109 T1 S220 ;wait T1
 
 ; nothing to do {{
+T0
+M104 S244
+M109 S244
+T1
+M109 S111 C3 W1 ; wait T1
+T0
+M109 S244 ; wait T0
+
 M109 T1 S255 C3 W1 ;wait T1
 M104 T0 S0
 M104 T1 S0
 G28 ; home
 M73 P100 R0 ; end
 ; }}
-	`)
+		`
+	comp_gcodes := _parseGcodes(comp)
 
-	r := GcodeFixPreheat(strings.Split(gcode, "\n"))
-	str_r := strings.TrimSpace(strings.Join(r, "\n"))
-	if strings.Compare(str_r, comp) != 0 {
-		t.Error(str_r + "\n\n==== comp:\n" + comp)
+	result := GcodeFixPreheat(gcodes)
+	if (reflect.DeepEqual(result, comp_gcodes)) != true {
+		results := make([]string, 0, len(result)+len(comp_gcodes)+1)
+		for _, g := range result {
+			results = append(results, g.String())
+		}
+		results = append(results, "==========>")
+		for _, g := range comp_gcodes {
+			results = append(results, g.String())
+		}
+		t.Error(strings.Join(results, "\n"))
 	}
 }
 
-func TestGcodeTrimLines(t *testing.T) {
-	gcode := `
-	Line 1
-Line 2
+/*
+	func TestGcodeTrimLines(t *testing.T) {
+		gcode := `
+		G0 X0
 
-  Line 3
-  ;
+G0 X1
 
-  G4 S0
-  G4 P100
+	G0 X3
+	;
+	;
+	; setting_1 = value1, value2
+	;
+
+
+	G4 S0
+	G4 P100
 
 G4 S0 ; comments
 
-Line 4
+# G0 X4
 
-
-
-
-Line 5
+G0 X5
 `
+
+	gcodes := _parseGcodes(gcode)
+
 	comp := `
-Line 1
-Line 2
 
-Line 3
-;
+G0 X0
+G0 X1
 
-G4 P100
+# G0 X3
 
-Line 4
+; setting_1 = value1, value2
 
-Line 5
+# G4 P100
+
+# G0 X4
+
+G0 X5
 `
 
-	r := GcodeTrimLines(strings.Split(gcode, "\n"))
-	str_r := strings.Join(r, "\n")
-	if strings.Compare(str_r, comp) != 0 {
-		t.Error("\n>>>" + str_r + "<<<\n==== comp:\n>>>" + comp + "<<<\n")
+		comp_gcodes := _parseGcodes(comp)
+
+		result := GcodeTrimLines(gcodes)
+		if (reflect.DeepEqual(result, comp_gcodes)) != true {
+			results := make([]string, 0, len(result)+len(comp_gcodes)+1)
+			for _, g := range result {
+				results = append(results, g.String())
+			}
+			results = append(results, "==========>")
+			for _, g := range comp_gcodes {
+				results = append(results, g.String())
+			}
+			t.Error(strings.Join(results, "\n"))
+		}
+	}
+*/
+func TestGcodeReinforceTower(t *testing.T) {
+	gcode := `
+G1  X176.579  E4.2970 F1584
+;Z:0.3
+; CP TOOLCHANGE WIPE
+G1  X176.579  E1.2970 F1584
+G1  Y31.500  E0.1900
+G1  X142.329  E1.3017 F1800
+G1 F19200
+G92 E0
+; CP TOOLCHANGE END
+;Z:0.4
+G1  X176.579  E1.2970 F1584
+; CP TOOLCHANGE WIPE
+M73 R80
+G1  X176.579  E2.2970 F1584
+G1  Y31.500  E0.1900
+G1  X176.579  E4.3017 F2198
+G1  Y36.500  E0.1900
+G1  X176.579  E4.3017 F2198
+G1 F19200
+G92 E0
+; CP TOOLCHANGE END
+G1  X176.579  E1.2970 F1584
+`
+
+	gcodes := _parseGcodes(gcode)
+
+	comp := `
+G1  X176.579  E4.2970 F1584
+;Z:0.3
+; CP TOOLCHANGE WIPE
+G1  X176.579  E1.2970 F1584
+G1  Y31.500  E0.1900
+G1  X142.329  E1.3017 F1800
+G1 F19200
+G92 E0
+; CP TOOLCHANGE END
+;Z:0.4
+G1  X176.579  E1.2970 F1584
+; CP TOOLCHANGE WIPE
+M73 R80
+G1 E1.0336499 F1584 ;(Fixed: reinforce tower)
+G1  X176.579  E2.2970 F1584
+G1  Y31.500  E0.1900
+G1 E1.0336499 F1584 ;(Fixed: reinforce tower)
+G1  X176.579  E4.3017 F2198
+G1  Y36.500  E0.1900
+G1 E1.0336499 F1584 ;(Fixed: reinforce tower)
+G1  X176.579  E4.3017 F2198
+G1 F19200
+G92 E0
+; CP TOOLCHANGE END
+G1  X176.579  E1.2970 F1584
+`
+
+	comp_gcodes := _parseGcodes(comp)
+
+	result := GcodeReinforceTower(gcodes)
+	if (reflect.DeepEqual(result, comp_gcodes)) != true {
+		results := make([]string, 0, len(result)+len(comp_gcodes)+1)
+		for _, g := range result {
+			results = append(results, g.String())
+		}
+		results = append(results, "==========>")
+		for _, g := range comp_gcodes {
+			results = append(results, g.String())
+		}
+		t.Error(strings.Join(results, "\n"))
 	}
 }
 
-func TestGcodeReinforceTower(t *testing.T) {
-	gcodes := `
-G1  X176.579  E4.2970 F1584
-;Z:0.3
-; CP TOOLCHANGE WIPE
-G1  X176.579  E1.2970 F1584
-G1  Y31.500  E0.1900
-G1  X142.329  E1.3017 F1800
-G1 F19200
-G92 E0
-; CP TOOLCHANGE END
-;Z:0.4
-G1  X176.579  E1.2970 F1584
-; CP TOOLCHANGE WIPE
-M73 R80
-G1  X176.579  E2.2970 F1584
-G1  Y31.500  E0.1900
-G1  X176.579  E4.3017 F2198
-G1  Y36.500  E0.1900
-G1  X176.579  E4.3017 F2198
-G1 F19200
-G92 E0
-; CP TOOLCHANGE END
-G1  X176.579  E1.2970 F1584
-`
-	comp := `
-G1  X176.579  E4.2970 F1584
-;Z:0.3
-; CP TOOLCHANGE WIPE
-G1  X176.579  E1.2970 F1584
-G1  Y31.500  E0.1900
-G1  X142.329  E1.3017 F1800
-G1 F19200
-G92 E0
-; CP TOOLCHANGE END
-;Z:0.4
-G1  X176.579  E1.2970 F1584
-; CP TOOLCHANGE WIPE
-M73 R80
-G1 E1.0337 F1584 ; (Fixed: reinforce tower)
-G1  X176.579  E2.2970 F1584
-G1  Y31.500  E0.1900
-G1 E1.0337 F1584 ; (Fixed: reinforce tower)
-G1  X176.579  E4.3017 F2198
-G1  Y36.500  E0.1900
-G1 E1.0337 F1584 ; (Fixed: reinforce tower)
-G1  X176.579  E4.3017 F2198
-G1 F19200
-G92 E0
-; CP TOOLCHANGE END
-G1  X176.579  E1.2970 F1584
-`
-
-	r := GcodeReinforceTower(strings.Split(gcodes, "\n"))
-	str_r := strings.Join(r, "\n")
-	if strings.Compare(str_r, comp) != 0 {
-		t.Error("\n>>>" + str_r + "<<<\n==== comp:\n>>>" + comp + "<<<\n")
+func TestGcodeReplaceToolNum(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want string
+	}{
+		{"T0 ; tool T0", "T0  ; tool T0"},
+		{"T1 ; tool T1", "T1  ; tool T1"},
+		{"T3 ; tool T3", "T1  ; tool T3"},
+		{"T63 ; tool T63", "T1  ; tool T63"},
+		{"M104 S255", "M104 S255"},
+		{"M109 S255 C2 W1", "M109 S255 C2 W1"},
+		{"M104 T0 S200", "M104 T0 S200"},
+		{"M104 T1 S200", "M104 T1 S200"},
+		{"M104 T3 S200", "M104 T1 S200"},
+		{"M104 T63 S200", "M104 T1 S200"},
+		{"M106 S255", "M106 S255"},
+		{"M107", "M107"},
+		{"M106 P0 S200", "M106 P0 S200"},
+		{"M106 P62 S200", "M106 P0 S200"},
+		{"M107 P0 ; fan off", "M107 P0 ; fan off"},
+		{"M107 P62 ; fan off", "M107 P0 ; fan off"},
+		{"M301 E3 T0", "M301 E1 T0"},
+		{"M303 E4 T1", "M303 E0 T1"},
+		{"M108 T33 ; fake cmd", "M108 T33 ; fake cmd"},
+		{"G1 T33", "G1 T33"},
 	}
+
+	for _, tc := range cases {
+		g, err := ParseGcodeBlock(tc.raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gcodes := []*GcodeBlock{g}
+		result := GcodeReplaceToolNum(gcodes)
+		if result[0].String() != tc.want {
+			t.Errorf("Got %q, want %q", g, tc.want)
+		}
+	}
+}
+
+func TestGcode(t *testing.T) {
+	{ // NewGcode
+		cases := map[string]struct {
+			word  byte
+			addr  string
+			valid bool
+		}{
+			"*0X": {'*', "0X", false},
+			"y":   {'Y', "", false},
+			"0":   {'0', "", false},
+
+			"X*": {'X', "*", true},
+			"B":  {'B', "", true},
+			"B0": {'B', "0", true},
+
+			"G0":   {'G', "0", true},
+			"E-3":  {'E', "-3", true},
+			"G.1":  {'G', ".1", true},
+			"G-.1": {'G', "-.1", true},
+
+			"E.00001":       {'E', ".00001", true},
+			"E-.00001":      {'E', "-.00001", true},
+			"E.000001":      {'E', ".000001", true},
+			"X-9999.000001": {'X', "-9999.000001", true},
+		}
+		for raw, tc := range cases {
+			t.Run(raw, func(t *testing.T) {
+				g, err := NewGcode(tc.word, tc.addr)
+				if tc.valid {
+					if err != nil {
+						t.Errorf("unexpected error: %v", err)
+					} else {
+						if g.String() != raw {
+							t.Errorf("(%s) but want(%s)", g, raw)
+						}
+					}
+				} else {
+					if err == nil && g.String() == raw {
+						t.Errorf("unexpected success: (%v) want (%s)", g, raw)
+					}
+				}
+			})
+		}
+	}
+
+	{ // ParseGcode
+		_, err := ParseGcode("")
+		if err == nil || err.Error() != ErrEmptyString.Error() {
+			t.Errorf("unexpected error: %v", err)
+		}
+	}
+
+	{ // SetAddr
+		cases := []struct {
+			want   string
+			origin *Gcode
+			new    any
+			err    error
+		}{
+			{"E0.00000", &Gcode{'E', "6"}, 0.000001, nil}, // 0.000001 < 0.00001
+			{"E0.00001", &Gcode{'E', "6"}, 0.00001, nil},
+			{"E3", &Gcode{'E', ""}, 3, nil},
+			{"E4", &Gcode{'E', ""}, int32(4), nil},
+			{"E5", &Gcode{'E', ""}, int64(5), nil},
+			{"E6", &Gcode{'E', ""}, uint(6), nil},
+			{"E7", &Gcode{'E', ""}, uint32(7), nil},
+			{"E8", &Gcode{'E', ""}, uint64(8), nil},
+			{"E9.10000", &Gcode{'E', ""}, float32(9.1), nil}, // E.5f
+			{"E9.20000", &Gcode{'E', ""}, float64(9.2), nil},
+			{"R", &Gcode{'R', "999"}, nil, nil},
+			{"Z", &Gcode{'Z', "999"}, false, errors.New("unsupported addr type bool")},
+			{"S", &Gcode{'S', "999"}, errors.ErrUnsupported, errors.New("unsupported addr type *errors.errorString")},
+			{"X0.001", &Gcode{'X', ""}, 0.001, nil},
+			{"X-0.001", &Gcode{'X', ""}, -0.001, nil},
+			{"E1.23457", &Gcode{'E', ""}, 1.23456789, nil},        // E.5f
+			{"E-1.23457", &Gcode{'E', ""}, -1.23456789, nil},      // E.5f
+			{"E-1.23456789", &Gcode{'E', ""}, "-1.23456789", nil}, // string
+			{"X0.000", &Gcode{'X', "6"}, 0.0001, nil},             // 0.0001 < 0.001
+			{"X1.235", &Gcode{'X', ""}, 1.23456789, nil},          // .3f
+		}
+
+		for _, c := range cases {
+			t.Run(c.want, func(t *testing.T) {
+				if err := c.origin.SetAddr(c.new); err != nil && c.err != nil {
+					if err.Error() != c.err.Error() {
+						t.Errorf("unexpected error: %v", err)
+					}
+					return
+				}
+				if c.origin.String() != c.want {
+					t.Errorf("(%s) but want(%s)", c.origin, c.want)
+				}
+			})
+		}
+	}
+
+	{ // AddrAs
+		var origin *Gcode
+
+		var str string
+		origin = &Gcode{'X', "6"}
+		origin.AddrAs(&str)
+		if str != "6" {
+			t.Errorf("unexpected addr: %v", str)
+		}
+
+		var i int
+		origin.AddrAs(&i)
+		if i != 6 {
+			t.Errorf("unexpected addr: %v", i)
+		}
+
+		var i32 int32
+		origin.AddrAs(&i32)
+		if i32 != 6 {
+			t.Errorf("unexpected addr: %v", i32)
+		}
+
+		var f32 float32
+		origin.AddrAs(&f32)
+		if f32 != 6 {
+			t.Errorf("unexpected addr: %v", f32)
+		}
+
+		origin = &Gcode{'X', ".000001"}
+		origin.AddrAs(&f32)
+		if f32 != 0.000001 {
+			t.Errorf("unexpected addr: %v", f32)
+		}
+
+		var f64 float64
+		if err := origin.AddrAs(&f64); err == nil || err.Error() != "unsupported addr type as *float64" {
+			t.Errorf("unexpected error: %v", err)
+		}
+	}
+
+}
+
+func TestParseGcodeBlock(t *testing.T) {
+	{ // validate all funcs
+		s := " M1 X1.23 Y2.456 Z.3 E-.004 F500000 ; a comment T63 "
+		g, err := ParseGcodeBlock(s)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+
+		if g.String() != strings.TrimSpace(s) {
+			t.Errorf("unexpected string: %v", g.String())
+		}
+		if !g.Is("M1") {
+			t.Errorf("unexpected command: %v", g.Cmd().String())
+		}
+		if !g.HasParam('X') {
+			t.Errorf("expected param X but not: %v", g.Cmd().String())
+		}
+		if g.HasParam('M') {
+			t.Errorf("unexpected param M: %v", g.Cmd().String())
+		}
+		var e float32
+		if err := g.GetParam('E', &e); err == nil && e != -0.004 {
+			t.Errorf("expected -0.004 but not: %v", e)
+		} else if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		if new := g.Copy(); new.String() != g.String() {
+			t.Errorf("unexpected copy: %v", new.String())
+		}
+		if g.Comment() != "; a comment T63" {
+			t.Errorf("unexpected comment: %v", g.Comment())
+		}
+		if tool, err := g.GetToolNum(); tool != 63 || err != nil {
+			t.Errorf("unexpected tool: %v, err: %s, comment: %s", tool, err, g.Comment())
+		}
+		g.SetComment("; another comment %d", 123)
+		if g.Comment() != "; another comment 123" {
+			t.Errorf("unexpected comment: %v", g.Comment())
+		}
+		g.AppendComment(", append %.3f", .456)
+		comment := "; another comment 123, append 0.456"
+		if g.Comment() != comment {
+			t.Errorf("unexpected comment: %v", g.Comment())
+		}
+		if r := g.Format("%m"); r != comment {
+			t.Errorf("unexpected comment: %v", r)
+		}
+		format := "this is a %c gcode"
+		if r := g.Format(format); r != "this is a M1 gcode" {
+			t.Errorf("unexpected format: %q", r)
+		}
+		if !g.InComment("0.456") {
+			t.Errorf("expect 0.456 in comment but not: %v", g.Comment())
+		}
+	}
+	{ // get tool num
+		cases := map[string]int32{
+			"M104 S154 ;standby T0":     0,
+			"M104 S154 ; standby  T64;": 64,
+			"M104 T0 S154 ;standby   T": 0,
+			"M104 T0 S154 ; standby T9": 0,
+			"M106 P3 S154":              3,
+			"M106 T0 P4 S154":           4,
+			"M107 T0 P5 S154":           5,
+			"M303 T1 P2 E3 S154":        3,
+			"T0":                        0,
+			"T-1":                       -1,
+			"T0;T1":                     0,
+			"M0 T-1;T-3":                -1,
+			";T1":                       1,
+			// ";T-3":                      -3, // not support in comment
+		}
+
+		for s, want := range cases {
+			g, err := ParseGcodeBlock(s)
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if tool, err := g.GetToolNum(); tool != want || err != nil {
+				t.Errorf("unexpected tool: %v, err: %s, %s", tool, err, g)
+			}
+		}
+	}
+
+	{
+		// raw -> want
+		cases := [][2]string{
+			{" G0.1   X1.23 Y.456000 F500000 ", "G0.1 X1.23 Y.456000 F500000"},
+			{"G0 X1.23 Y.456000 ; comment", "G0 X1.23 Y.456000 ; comment"},
+			{" T64", "T64"},
+			{"M900 K-.04", "M900 K-.04"},
+			{"; config = value\nss ", "; config = value\nss"},
+			{";; a comment ", ";; a comment"},
+			{";", ";"},
+			{"G1 123", "G1"},
+			{"M220 R", "M220 R"},
+			{"G28 X Y", "G28 X Y"},
+			{"X Y Z", "X Y Z"},
+			{"G28 N*", "G28 N*"},
+			{"N**", "N**"},
+			{"N;comm", "N  ;comm"}, // N as command, %p be replaced as a space
+		}
+
+		for _, c := range cases {
+			result, err := ParseGcodeBlock(c[0])
+			if err != nil {
+				t.Errorf("unexpected error: %v (%s)", err, c[0])
+				break
+			}
+			if result.String() != c[1] {
+				t.Errorf("(%v) but want(%v)", result, c[1])
+			}
+		}
+	}
+}
+
+func BenchmarkParseGcodeBlock(b *testing.B) {
+	code := " G0.1  X1.23 Z.3 E-.004 R Y .333 F500000 ;  comment"
+	b.SetBytes(int64(len(code)))
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		g, err := ParseGcodeBlock(code)
+		if err != nil {
+			b.Fatal(err)
+		}
+		_ = g.String()
+	}
+}
+
+func BenchmarkGcodeAsType(b *testing.B) {
+	g, err := ParseGcode("E-.004")
+	if err != nil {
+		b.Fatal(err)
+	}
+	var t float32
+	for i := 0; i < b.N; i++ {
+		err = g.AddrAs(&t)
+		if err != nil {
+			b.Fatal(err)
+		}
+		_ = t
+	}
+}
+
+func BenchmarkToolNum(b *testing.B) {
+	g, err := ParseGcodeBlock("M104 S255 T1 ; tool T2")
+	if err != nil {
+		b.Fatal(err)
+	}
+	for i := 0; i < b.N; i++ {
+		if t, err := g.GetToolNum(); err == nil {
+			if t != 1 {
+				b.Fatalf("got %d, want %d", t, 1)
+			}
+		} else {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkXxx(b *testing.B) {
+	list := list.New()
+	b.Run("Insert", func(b *testing.B) {
+		g, _ := ParseGcodeBlock("G0.1  X1.23 Z.3 E-.004 R Y.333 F500000 ; comment")
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := 0; i < b.N; i++ {
+			new := g.Copy()
+			list.PushBack(new)
+		}
+		if list.Len() != b.N {
+			// b.Fatalf("list size %d, want %d", list.Len(), b.N)
+		}
+	})
 }

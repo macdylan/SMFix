@@ -2,6 +2,7 @@ package fix
 
 import (
 	"bytes"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -109,4 +110,87 @@ func GoInParallelAndWait(work func(wi, wn int)) {
 		}(wi, wn)
 	}
 	wg.Wait()
+}
+
+var (
+// reRemoveDuplicateSpaces = regexp.MustCompile(`\s{2,}`)
+// reRemoveSpecialChars = regexp.MustCompile(`[\n\t\r]`)
+)
+
+// removeDuplicateSpaces remove all space char consecutive two or more times
+/*
+func removeDuplicateSpaces(s string) string {
+	return reRemoveDuplicateSpaces.ReplaceAllString(s, " ")
+}
+*/
+
+// removeDuplicateSpaces removes all consecutive spaces in a string
+func removeDuplicateSpaces(s string) string {
+	var (
+		sb        strings.Builder
+		prevSpace = false
+	)
+
+	for i := 0; i < len(s); i++ {
+		if s[i] == ' ' {
+			if !prevSpace {
+				sb.WriteByte(s[i])
+				prevSpace = true
+			}
+		} else {
+			sb.WriteByte(s[i])
+			prevSpace = false
+		}
+	}
+
+	return sb.String()
+}
+
+// removeSpecialChars remove all escape characters
+/*
+func removeSpecialChars(s string) string {
+	return reRemoveSpecialChars.ReplaceAllString(s, " ")
+}
+*/
+// removeSpecialChars removes only the escape characters \n, \t, and \r from the given string
+func removeSpecialChars(s string) string {
+	var result strings.Builder
+	for _, c := range s {
+		if c != '\n' && c != '\t' && c != '\r' {
+			result.WriteRune(c)
+		}
+	}
+	return result.String()
+}
+
+// prepareGcodeLineToParse modify a string to can be parsed for the Parse function
+// It doesn't verify if s strings is a gcode line valid
+func prepareGcodeLineToParse(s string) string {
+	s = strings.TrimSpace(s)
+	s = removeSpecialChars(s)
+	s = removeDuplicateSpaces(s)
+
+	return s
+}
+
+type elementTaken struct {
+	taken     string
+	remainder string
+}
+
+var takeRegexp map[string]*regexp.Regexp
+
+func take(source string, regex string) elementTaken {
+	if takeRegexp == nil {
+		takeRegexp = make(map[string]*regexp.Regexp, 16)
+	}
+	if _, ok := takeRegexp[regex]; !ok {
+		takeRegexp[regex] = regexp.MustCompile(regex)
+	}
+	match := takeRegexp[regex].FindIndex([]byte(source))
+	if match == nil {
+		return elementTaken{remainder: source}
+	}
+
+	return elementTaken{taken: source[match[0]:match[1]], remainder: source[:match[0]] + source[match[1]:]}
 }

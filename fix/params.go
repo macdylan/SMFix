@@ -111,9 +111,9 @@ func ParseParams(f io.Reader) error {
 		thumbnail_bytes [][]byte
 		thumbnail_start = false
 
-		model              string
-		bed_shape          string
-		printers_condition string
+		model     string
+		bed_shape string
+		// printers_condition string
 
 		retract_len          = []float64{-1, -1}
 		filament_retract_len = []float64{-1, -1}
@@ -191,8 +191,8 @@ func ParseParams(f io.Reader) error {
 			model = v
 		} else if v, ok := getSetting(line, "bed_shape"); ok {
 			bed_shape = v
-		} else if v, ok := getSetting(line, "compatible_printers_condition_cummulative", "print_compatible_printers" /*bbs*/); ok {
-			printers_condition = v
+			// } else if v, ok := getSetting(line, "compatible_printers_condition_cummulative", "print_compatible_printers" /*bbs*/); ok {
+			// 	printers_condition = v
 		}
 
 		if thumbnail_start {
@@ -238,8 +238,17 @@ func ParseParams(f io.Reader) error {
 		Params.Retractions[1] = 0
 	}
 
-	if Params.LeftExtruderUsed && Params.RightExtruderUsed {
-		Params.ToolHead = ToolheadDual
+	{
+		if Params.LeftExtruderUsed && Params.RightExtruderUsed {
+			Params.ToolHead = ToolheadDual
+		}
+
+		if Params.ToolHead == ToolheadSingle {
+			if strings.Contains(model, " Dual") || strings.Contains(Params.PrinterNotes, "_DUAL") {
+				Params.ToolHead = ToolheadDual
+			}
+		}
+
 	}
 
 	if Params.PrintMode == PrintModeMirror || Params.PrintMode == PrintModeDuplication {
@@ -255,10 +264,6 @@ func ParseParams(f io.Reader) error {
 		Params.Version = 0
 	}
 
-	if strings.Contains(Params.PrinterNotes, "_DUAL") {
-		Params.ToolHead = ToolheadDual
-	}
-
 	{
 		// printer model && slicer version
 		var models = map[string]string{
@@ -267,9 +272,13 @@ func ParseParams(f io.Reader) error {
 
 			"A250":    ModelA250,
 			"230x250": ModelA250,
+			"220x235": ModelA250, // dual + qskit
 
 			"A350":    ModelA350,
 			"320x350": ModelA350,
+			"310x350": ModelA350, // dual
+			"320x335": ModelA350, // qskit
+			"310x335": ModelA350, // dual + qskit
 
 			"A400":    ModelA400,
 			"Artisan": ModelA400,
@@ -285,10 +294,12 @@ func ParseParams(f io.Reader) error {
 				Params.Model = v
 				break
 			}
-			if strings.Contains(printers_condition, k) {
-				Params.Model = v
-				break
-			}
+			/*
+				if strings.Contains(printers_condition, k) {
+					Params.Model = v
+					break
+				}
+			*/
 			if strings.Contains(bed_shape, k) {
 				Params.Model = v
 				break
