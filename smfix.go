@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"strings"
 
 	"github.com/macdylan/SMFix/fix"
 )
@@ -56,15 +57,17 @@ func main() {
 		stopCPUProfile()
 	}()
 
-	var headers [][]byte
-	if headers, err = fix.ExtractHeader(in); err != nil {
-		log.Fatalf("Parse params failed: %s", err)
-	}
-
-	gcodes := make([]*fix.GcodeBlock, 0, fix.Params.TotalLines+len(headers)+1024)
+	// read gcodes form file
+	gcodes := []*fix.GcodeBlock{}
 	sc := bufio.NewScanner(in)
 	for sc.Scan() {
-		g, err := fix.ParseGcodeBlock(sc.Text())
+		line := sc.Text()
+
+		if strings.HasPrefix(line, "; Postprocessed by smfix") {
+			log.Fatalln(fix.ErrIsFixed)
+		}
+
+		g, err := fix.ParseGcodeBlock(line)
 		if err == nil {
 			// ignore G4 S0
 			if g.Is("G4") {
@@ -87,7 +90,7 @@ func main() {
 	}
 
 	// fix gcodes
-	funcs := make([]fix.GcodeModifier, 0, 8)
+	funcs := make([]fix.GcodeModifier, 0, 6)
 	if !noTrim {
 		// funcs = append(funcs, fix.GcodeTrimLines)
 	}
@@ -103,9 +106,16 @@ func main() {
 	if !noReinforceTower {
 		funcs = append(funcs, fix.GcodeReinforceTower)
 	}
+	funcs = append(funcs, fix.GcodeFixOrcaToolUnload)
 
 	for _, fn := range funcs {
 		gcodes = fn(gcodes)
+	}
+
+	// extract headers
+	var headers [][]byte
+	if headers, err = fix.ExtractHeader(gcodes); err != nil {
+		log.Fatalf("Parse params failed: %s", err)
 	}
 
 	// prepare for output file

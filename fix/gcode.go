@@ -35,17 +35,18 @@ func (g *Gcode) Addr() string {
 }
 
 func (g *Gcode) AddrAs(target any) error {
+	baddr := []byte(g.addr)
 	switch typ := target.(type) {
 	case *string:
 		*typ = g.addr
 	case *int:
-		i64, err := strconv.ParseInt(g.addr, 10, 32)
+		i64, err := ParseInt(baddr)
 		if err == nil {
 			*typ = int(i64)
 		}
 		return err
 	case *int32:
-		i64, err := strconv.ParseInt(g.addr, 10, 32)
+		i64, err := ParseInt(baddr)
 		if err == nil {
 			*typ = int32(i64)
 		}
@@ -252,7 +253,7 @@ func (b *GcodeBlock) GetToolNum() (t int32, err error) {
 	default:
 		err = fmt.Errorf("command %s not supported", b.Cmd())
 	}
-	if t == -1 || err != nil {
+	if (t == -1 || err != nil) && len(b.Comment()) > 2 {
 		// try T in comment
 		if ele := strings.TrimSpace(take(b.Comment(), `\s*T\d+`).taken); ele != "" {
 			var i64 int64
@@ -397,4 +398,16 @@ func isValidWord(word byte) error {
 	*/
 
 	return fmt.Errorf("gcode's word has invalid value: %v", word)
+}
+
+func insertAfter(gcodes *[]*GcodeBlock, pos int, g *GcodeBlock) {
+	*gcodes = append(*gcodes, nil)
+	copy((*gcodes)[pos:], (*gcodes)[pos-1:])
+	(*gcodes)[pos-1] = g
+}
+
+func insertBefore(gcodes *[]*GcodeBlock, pos int, g *GcodeBlock) {
+	*gcodes = append(*gcodes, nil)
+	copy((*gcodes)[pos:], (*gcodes)[pos-1:])
+	(*gcodes)[pos] = g
 }

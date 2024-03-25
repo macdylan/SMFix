@@ -2,7 +2,6 @@ package fix
 
 import (
 	"bytes"
-	"container/list"
 	"errors"
 	"reflect"
 	"strings"
@@ -100,6 +99,18 @@ func TestSplit(t *testing.T) {
 		t.Error("index 0 value is not xxxx, but:", r[0])
 	}
 	if r[1] != "yy yy" {
+		t.Error("index 1 value is not yy yy, but:", r[1])
+	}
+
+	s = "ABS,PETG,PLA"
+	r = split(s)
+	if len(r) != 3 {
+		t.Error("len is not 2, but:", len(r))
+	}
+	if r[0] != "ABS" {
+		t.Error("index 0 value is not xxxx, but:", r[0])
+	}
+	if r[1] != "PETG" {
 		t.Error("index 1 value is not yy yy, but:", r[1])
 	}
 }
@@ -500,43 +511,133 @@ G1  X176.579  E1.2970 F1584
 }
 
 func TestGcodeReplaceToolNum(t *testing.T) {
-	cases := []struct {
-		raw  string
-		want string
-	}{
-		{"T0 ; tool T0", "T0  ; tool T0"},
-		{"T1 ; tool T1", "T1  ; tool T1"},
-		{"T3 ; tool T3", "T1  ; tool T3"},
-		{"T63 ; tool T63", "T1  ; tool T63"},
-		{"M104 S255", "M104 S255"},
-		{"M109 S255 C2 W1", "M109 S255 C2 W1"},
-		{"M104 T0 S200", "M104 T0 S200"},
-		{"M104 T1 S200", "M104 T1 S200"},
-		{"M104 T3 S200", "M104 T1 S200"},
-		{"M104 T63 S200", "M104 T1 S200"},
-		{"M106 S255", "M106 S255"},
-		{"M107", "M107"},
-		{"M106 P0 S200", "M106 P0 S200"},
-		{"M106 P62 S200", "M106 P0 S200"},
-		{"M107 P0 ; fan off", "M107 P0 ; fan off"},
-		{"M107 P62 ; fan off", "M107 P0 ; fan off"},
-		{"M301 E3 T0", "M301 E1 T0"},
-		{"M303 E4 T1", "M303 E0 T1"},
-		{"M108 T33 ; fake cmd", "M108 T33 ; fake cmd"},
-		{"G1 T33", "G1 T33"},
-	}
+	t.Run("replace gcode", func(t *testing.T) {
+		cases := []struct {
+			raw  string
+			want string
+		}{
+			{"T0 ; tool T0", "T0  ; tool T0"},
+			{"T1 ; tool T1", "T1  ; tool T1"},
+			{"T3 ; tool T3", "T1  ; tool T3"},
+			{"T63 ; tool T63", "T1  ; tool T63"},
+			{"M104 S255", "M104 S255"},
+			{"M109 S255 C2 W1", "M109 S255 C2 W1"},
+			{"M104 T0 S200", "M104 T0 S200"},
+			{"M104 T1 S200", "M104 T1 S200"},
+			{"M104 T3 S200", "M104 T1 S200"},
+			{"M104 T63 S200", "M104 T1 S200"},
+			{"M106 S255", "M106 S255"},
+			{"M107", "M107"},
+			{"M106 P0 S200", "M106 P0 S200"},
+			{"M106 P62 S200", "M106 P0 S200"},
+			{"M107 P0 ; fan off", "M107 P0 ; fan off"},
+			{"M107 P62 ; fan off", "M107 P0 ; fan off"},
+			{"M301 E3 T0", "M301 E1 T0"},
+			{"M303 E4 T1", "M303 E0 T1"},
+			{"M108 T33 ; fake cmd", "M108 T33 ; fake cmd"},
+			{"G1 T33", "G1 T33"},
+		}
 
-	for _, tc := range cases {
-		g, err := ParseGcodeBlock(tc.raw)
-		if err != nil {
-			t.Fatal(err)
+		for _, tc := range cases {
+			g, err := ParseGcodeBlock(tc.raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			gcodes := []*GcodeBlock{g}
+			result := GcodeReplaceToolNum(gcodes)
+			if result[0].String() != tc.want {
+				t.Errorf("Got %q, want %q", g, tc.want)
+			}
 		}
-		gcodes := []*GcodeBlock{g}
-		result := GcodeReplaceToolNum(gcodes)
-		if result[0].String() != tc.want {
-			t.Errorf("Got %q, want %q", g, tc.want)
+	})
+
+	comp := func(gcodes []*GcodeBlock, want []*GcodeBlock) {
+		got := GcodeReplaceToolNum(gcodes)
+		if (reflect.DeepEqual(got, want)) != true {
+			results := make([]string, 0, len(got)+len(want)+1)
+			for _, g := range got {
+				results = append(results, g.String())
+			}
+			results = append(results, "==========>")
+			for _, g := range want {
+				results = append(results, g.String())
+			}
+			t.Error(strings.Join(results, "\n"))
 		}
 	}
+	t.Run("replace comment 1", func(t *testing.T) {
+		gcodes := _parseGcodes(`
+T0
+T1
+; filament used [mm] = 5989.21, 4703.92
+; filament used [cm3] = 14.41, 11.31
+; filament used [g] = 17.86, 14.03
+; filament cost = 0, 0, 0, 1.07, 0.84; total filament used [g] = 31.89
+		`)
+		want := _parseGcodes(`
+T0
+T1
+; filament used [mm] = 5989.21,4703.92
+; filament used [cm3] = 14.41,11.31
+; filament used [g] = 17.86,14.03
+; filament cost = 0, 0, 0, 1.07, 0.84; total filament used [g] = 31.89
+		`)
+		comp(gcodes, want)
+	})
+
+	t.Run("replace comment 2", func(t *testing.T) {
+		gcodes := _parseGcodes(`
+T1
+; filament used [mm] = 0, 4703.92
+; filament used [cm3] = 0, 11.31
+; filament used [g] = 0, 14.03
+		`)
+		want := _parseGcodes(`
+T1
+; filament used [mm] = 0,4703.92
+; filament used [cm3] = 0,11.31
+; filament used [g] = 0,14.03
+		`)
+		comp(gcodes, want)
+	})
+
+	t.Run("replace comment 3", func(t *testing.T) {
+		gcodes := _parseGcodes(`
+T3
+T2
+; filament used [mm] = 0, 0, 5989.21, 4703.92
+; filament used [cm3] = 0, 0, 14.41, 11.31
+; filament used [g] = 0, 0, 17.86, 14.03
+		`)
+		want := _parseGcodes(`
+T1
+T0
+; filament used [mm] = 5989.21,4703.92
+; filament used [cm3] = 14.41,11.31
+; filament used [g] = 17.86,14.03
+		`)
+		comp(gcodes, want)
+	})
+
+	t.Run("replace comment 4", func(t *testing.T) {
+		gcodes := _parseGcodes(`
+T2
+T1
+; filament used [mm] = 0, 9, 5989.21, 4703.92
+; filament_type = PLA;ABS; PETG; ASA
+; first_layer_bed_temperature = 70
+; hot_plate_temp_initial_layer = 55, 95, 70,100
+		`)
+		want := _parseGcodes(`
+T0
+T1
+; filament used [mm] = 5989.21,9
+; filament_type = PETG;ABS
+; first_layer_bed_temperature = 70
+; hot_plate_temp_initial_layer = 70,95
+		`)
+		comp(gcodes, want)
+	})
 }
 
 func TestGcode(t *testing.T) {
@@ -793,6 +894,75 @@ func TestParseGcodeBlock(t *testing.T) {
 	}
 }
 
+func TestGcodeFixOrcaToolUnload(t *testing.T) {
+	gcode := `
+M104 S199
+; LAYER_HEIGHT: 0.2
+; FEATURE: Prime tower
+; LINE_WIDTH: 0.5
+;--------------------
+; CP TOOLCHANGE START
+; toolchange #2
+; material : PETG -> PET
+;--------------------
+M220 B
+M220 S100
+; CP TOOLCHANGE UNLOAD
+; LINE_WIDTH: 0.6
+; LINE_WIDTH: 0.5
+M104 S250 T0
+M104 S278
+M104 S255; T1
+; Cooling park
+G4 S0
+G1 E-2 F2100
+; CP TOOLCHANGE END
+;------------------
+M104 S299
+`
+	gcodes := _parseGcodes(gcode)
+
+	comp := `
+M104 S199
+; LAYER_HEIGHT: 0.2
+; FEATURE: Prime tower
+; LINE_WIDTH: 0.5
+;--------------------
+; CP TOOLCHANGE START
+; toolchange #2
+; material : PETG -> PET
+;--------------------
+M220 B
+M220 S100
+; CP TOOLCHANGE UNLOAD
+; LINE_WIDTH: 0.6
+; LINE_WIDTH: 0.5
+M104 S250 T0
+;(Fixed: remove: M104 S278)
+M104 S255; T1
+; Cooling park
+G4 S0
+G1 E-2 F2100
+; CP TOOLCHANGE END
+;------------------
+M104 S299
+`
+	comp_gcodes := _parseGcodes(comp)
+
+	result := GcodeFixOrcaToolUnload(gcodes)
+	if (reflect.DeepEqual(result, comp_gcodes)) != true {
+		results := make([]string, 0, len(result)+len(comp_gcodes)+1)
+		for _, g := range result {
+			results = append(results, g.String())
+		}
+		results = append(results, "==========>")
+		for _, g := range comp_gcodes {
+			results = append(results, g.String())
+		}
+		t.Error(strings.Join(results, "\n"))
+	}
+}
+
 func BenchmarkParseGcodeBlock(b *testing.B) {
 	code := " G0.1  X1.23 Z.3 E-.004 R Y .333 F500000 ;  comment"
 	b.SetBytes(int64(len(code)))
@@ -836,20 +1006,4 @@ func BenchmarkToolNum(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
-}
-
-func BenchmarkXxx(b *testing.B) {
-	list := list.New()
-	b.Run("Insert", func(b *testing.B) {
-		g, _ := ParseGcodeBlock("G0.1  X1.23 Z.3 E-.004 R Y.333 F500000 ; comment")
-		b.ReportAllocs()
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			new := g.Copy()
-			list.PushBack(new)
-		}
-		if list.Len() != b.N {
-			// b.Fatalf("list size %d, want %d", list.Len(), b.N)
-		}
-	})
 }

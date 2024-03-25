@@ -2,6 +2,7 @@ package fix
 
 import (
 	"bytes"
+	"errors"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -9,13 +10,17 @@ import (
 	"sync"
 )
 
+var (
+	ErrValueSyntax  = errors.New("invalid syntax")
+	ErrIntegerRange = errors.New("value out of range")
+)
+
 func split(s string) []string {
-	var x []string
+	delimiter := ","
 	if strings.Contains(s, ";") {
-		x = strings.Split(s, ";")
-	} else {
-		x = strings.Split(s, ",")
+		delimiter = ";"
 	}
+	x := strings.Split(s, delimiter)
 	if len(x) == 1 {
 		x = append(x, "")
 	}
@@ -77,10 +82,15 @@ func parseFloat(s string) float64 {
 	return f
 }
 
-func parseInt(s string) int {
-	var i int
-	i, _ = strconv.Atoi(s)
-	return i
+func ParseInt(b []byte) (int64, error) {
+	if v, ok, overflow := _parseInt(b); !ok {
+		if overflow {
+			return 0, ErrIntegerRange
+		}
+		return 0, ErrValueSyntax
+	} else {
+		return v, nil
+	}
 }
 
 func getSetting(s string, key ...string) (v string, ok bool) {
@@ -112,18 +122,6 @@ func GoInParallelAndWait(work func(wi, wn int)) {
 	wg.Wait()
 }
 
-var (
-// reRemoveDuplicateSpaces = regexp.MustCompile(`\s{2,}`)
-// reRemoveSpecialChars = regexp.MustCompile(`[\n\t\r]`)
-)
-
-// removeDuplicateSpaces remove all space char consecutive two or more times
-/*
-func removeDuplicateSpaces(s string) string {
-	return reRemoveDuplicateSpaces.ReplaceAllString(s, " ")
-}
-*/
-
 // removeDuplicateSpaces removes all consecutive spaces in a string
 func removeDuplicateSpaces(s string) string {
 	var (
@@ -146,12 +144,6 @@ func removeDuplicateSpaces(s string) string {
 	return sb.String()
 }
 
-// removeSpecialChars remove all escape characters
-/*
-func removeSpecialChars(s string) string {
-	return reRemoveSpecialChars.ReplaceAllString(s, " ")
-}
-*/
 // removeSpecialChars removes only the escape characters \n, \t, and \r from the given string
 func removeSpecialChars(s string) string {
 	var result strings.Builder
@@ -178,19 +170,64 @@ type elementTaken struct {
 	remainder string
 }
 
-var takeRegexp map[string]*regexp.Regexp
+var takeRegexp sync.Map
 
 func take(source string, regex string) elementTaken {
-	if takeRegexp == nil {
-		takeRegexp = make(map[string]*regexp.Regexp, 16)
+	var (
+		re *regexp.Regexp
+	)
+	if load, ok := takeRegexp.Load(regex); ok {
+		re = load.(*regexp.Regexp)
+	} else {
+		re = regexp.MustCompile(regex)
+		takeRegexp.Store(regex, re)
 	}
-	if _, ok := takeRegexp[regex]; !ok {
-		takeRegexp[regex] = regexp.MustCompile(regex)
-	}
-	match := takeRegexp[regex].FindIndex([]byte(source))
+	match := re.FindStringIndex(source)
 	if match == nil {
 		return elementTaken{remainder: source}
 	}
 
 	return elementTaken{taken: source[match[0]:match[1]], remainder: source[:match[0]] + source[match[1]:]}
+}
+
+// About 2x faster then strconv.ParseInt because it only supports base 10
+func _parseInt(bytes []byte) (v int64, ok bool, overflow bool) {
+	if len(bytes) == 0 {
+		return 0, false, false
+	}
+
+	var neg bool = false
+	if bytes[0] == '-' {
+		neg = true
+		bytes = bytes[1:]
+	}
+
+	var n uint64 = 0
+	for _, c := range bytes {
+		if c < '0' || c > '9' {
+			return 0, false, false
+		}
+		if n > maxUint64/10 {
+			return 0, false, true
+		}
+		n *= 10
+		n1 := n + uint64(c-'0')
+		if n1 < n {
+			return 0, false, true
+		}
+		n = n1
+	}
+
+	if n > maxInt64 {
+		if neg && n == absMinInt64 {
+			return -absMinInt64, true, false
+		}
+		return 0, false, true
+	}
+
+	if neg {
+		return -int64(n), true, false
+	} else {
+		return int64(n), true, false
+	}
 }

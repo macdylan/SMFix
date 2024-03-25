@@ -1,9 +1,7 @@
 package fix
 
 import (
-	"bufio"
 	"errors"
-	"io"
 	"strings"
 )
 
@@ -100,13 +98,7 @@ func NewParams() *slicerParams {
 
 var Params = NewParams()
 
-func ParseParams(f io.Reader) error {
-	defer func(f io.Reader) {
-		if h, ok := f.(io.ReadSeeker); ok {
-			h.Seek(0, 0)
-		}
-	}(f)
-
+func ParseParams(gcodes []*GcodeBlock) error {
 	var (
 		thumbnail_bytes [][]byte
 		thumbnail_start = false
@@ -121,11 +113,10 @@ func ParseParams(f io.Reader) error {
 
 	//////// scan
 	Params = NewParams()
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
+	for _, gcode := range gcodes {
 		Params.TotalLines++
 
-		line := strings.TrimSpace(sc.Text())
+		line := gcode.String()
 		if len(line) < 1 {
 			continue
 		}
@@ -156,7 +147,9 @@ func ParseParams(f io.Reader) error {
 		} else if v, ok := getSetting(line, "filament_type"); ok {
 			Params.FilamentTypes = split(v)
 		} else if v, ok := getSetting(line, "total_layer_number", "total layers count" /* bbs*/); ok {
-			Params.TotalLayers = parseInt(v)
+			if layers, err := ParseInt([]byte(v)); err == nil { // ignore errors
+				Params.TotalLayers = int(layers)
+			}
 		} else if v, ok := getSetting(line, "filament_retract_length", "filament_retraction_length" /*bbs*/); ok {
 			filament_retract_len = splitFloat(v)
 		} else if v, ok := getSetting(line, "retract_length", "retraction_length" /*bbs*/); ok {
@@ -198,10 +191,6 @@ func ParseParams(f io.Reader) error {
 		if thumbnail_start {
 			thumbnail_bytes = append(thumbnail_bytes, []byte(line))
 		}
-	}
-
-	if err := sc.Err(); err != nil {
-		return err
 	}
 
 	//////// process params

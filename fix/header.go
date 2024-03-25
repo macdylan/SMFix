@@ -2,7 +2,6 @@ package fix
 
 import (
 	"fmt"
-	"io"
 )
 
 func H(s string, p ...any) []byte {
@@ -10,7 +9,7 @@ func H(s string, p ...any) []byte {
 }
 
 func headerV0() [][]byte {
-	h := make([][]byte, 0, 34)
+	h := make([][]byte, 0, 36)
 	h = append(h, H(Mark))
 	h = append(h, H(";Header Start"))
 	h = append(h, H(";FAVOR:Marlin"))
@@ -54,7 +53,7 @@ func headerV0() [][]byte {
 }
 
 func headerV1() [][]byte {
-	h := make([][]byte, 0, 27)
+	h := make([][]byte, 0, 32)
 	h = append(h, H(Mark))
 	h = append(h, H(";Header Start"))
 	h = append(h, H(";Version:1"))
@@ -94,8 +93,8 @@ func headerV1() [][]byte {
 	return h
 }
 
-func ExtractHeader(reader io.Reader) (headers [][]byte, err error) {
-	if err = ParseParams(reader); err != nil {
+func ExtractHeader(gcodes []*GcodeBlock) (headers [][]byte, err error) {
+	if err = ParseParams(gcodes); err != nil {
 		return
 	}
 
