@@ -14,7 +14,7 @@ func headerV0() [][]byte {
 	h = append(h, H(";Header Start"))
 	h = append(h, H(";FAVOR:Marlin"))
 	h = append(h, H(";TIME:6666"))
-	h = append(h, H(";Filament used: %.2fm", Params.AllFilamentUsed()/1000.0))
+	h = append(h, H(";Filament used: %.5fm", Params.AllFilamentUsed()/1000.0))
 	h = append(h, H(";Layer height: %.2f", Params.LayerHeight))
 	h = append(h, H(";header_type: 3dp"))
 	h = append(h, H(";tool_head: %s", Params.ToolHead))
@@ -43,6 +43,8 @@ func headerV0() [][]byte {
 	h = append(h, H(";min_z(mm): %.4f", Params.MinZ))
 	h = append(h, H(";layer_number: %d", Params.TotalLayers))
 	h = append(h, H(";layer_height: %.2f", Params.LayerHeight))
+	h = append(h, H(";matierial_weight: %.4f", Params.AllFilamentUsedWeight()))
+	h = append(h, H(";matierial_length: %.5f", Params.AllFilamentUsed()/1000.0))
 
 	if len(Params.Thumbnail) > 0 {
 		h = append(h, H(";thumbnail: %s", Params.Thumbnail))
