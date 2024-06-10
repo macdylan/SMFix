@@ -102,7 +102,9 @@ func getSetting(s string, key ...string) (v string, ok bool) {
 			}
 			prefix := "; " + p + " ="
 			if strings.HasPrefix(s, prefix) {
-				return strings.TrimSpace(s[len(prefix):]), true
+				if v := strings.TrimSpace(s[len(prefix):]); v != "" {
+					return v, true
+				}
 			}
 		}
 	}
