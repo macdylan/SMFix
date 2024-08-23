@@ -25,8 +25,8 @@ func init() {
 	flag.StringVar(&OutputPath, "o", "", "output path, default is input path")
 	flag.BoolVar(&noTrim, "notrim", false, "do not trim spaces in the gcode")
 	flag.BoolVar(&noShutoff, "noshutoff", false, "do not shutoff nozzles that are no longer in use")
-	flag.BoolVar(&noPreheat, "nopreheat", false, "do not pre-heat nozzles")
-	flag.BoolVar(&noReinforceTower, "noreinforcetower", false, "do not reinforce the prime tower")
+	flag.BoolVar(&noPreheat, "nopreheat", true, "do not pre-heat nozzles")
+	flag.BoolVar(&noReinforceTower, "noreinforcetower", true, "do not reinforce the prime tower")
 	flag.BoolVar(&noReplaceTool, "noreplacetool", false, "do not replace the tool number")
 	flag.Parse()
 }
