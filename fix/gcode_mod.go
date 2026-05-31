@@ -232,6 +232,7 @@ func GcodeTrimLines(gcodes []*GcodeBlock) (output []*GcodeBlock) {
 }
 */
 
+/*
 func GcodeReinforceTower(gcodes []*GcodeBlock) (output []*GcodeBlock) {
 	output = make([]*GcodeBlock, 0, len(gcodes)+2048)
 
@@ -277,6 +278,7 @@ func GcodeReinforceTower(gcodes []*GcodeBlock) (output []*GcodeBlock) {
 	}
 	return output
 }
+*/
 
 // GcodeReplaceToolNum 查找 Gcode 中的 T/M104/M106/M107/M109 指令，将参数中的 Tnum/Pnum 替换为 num % 2 的结果
 // Snapmaker 打印机最多只有2个喷嘴，T > 1 无效，但在 OrcaSlicer 中可以简化多材料的配置

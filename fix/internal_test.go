@@ -438,6 +438,8 @@ G0 X5
 		}
 	}
 */
+
+/*
 func TestGcodeReinforceTower(t *testing.T) {
 	gcode := `
 G1  X176.579  E4.2970 F1584
@@ -509,6 +511,7 @@ G1  X176.579  E1.2970 F1584
 		t.Error(strings.Join(results, "\n"))
 	}
 }
+*/
 
 func TestGcodeReplaceToolNum(t *testing.T) {
 	t.Run("replace gcode", func(t *testing.T) {
@@ -717,7 +720,7 @@ func TestGcode(t *testing.T) {
 			{"E1.23457", &Gcode{'E', "", 1 + uint16(len(""))}, 1.23456789, nil},        // E.5f
 			{"E-1.23457", &Gcode{'E', "", 1 + uint16(len(""))}, -1.23456789, nil},      // E.5f
 			{"E-1.23456789", &Gcode{'E', "", 1 + uint16(len(""))}, "-1.23456789", nil}, // string
-			{"X0.000", &Gcode{'X', "6", 1 + uint16(len("6"))}, 0.0001, nil},             // 0.0001 < 0.001
+			{"X0.000", &Gcode{'X', "6", 1 + uint16(len("6"))}, 0.0001, nil},            // 0.0001 < 0.001
 			{"X1.235", &Gcode{'X', "", 1 + uint16(len(""))}, 1.23456789, nil},          // .3f
 		}
 

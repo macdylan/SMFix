@@ -26,7 +26,7 @@ func init() {
 	flag.BoolVar(&noTrim, "notrim", false, "do not trim spaces in the gcode")
 	flag.BoolVar(&noShutoff, "noshutoff", false, "do not shutoff nozzles that are no longer in use")
 	flag.BoolVar(&noPreheat, "nopreheat", true, "do not pre-heat nozzles")
-	flag.BoolVar(&noReinforceTower, "noreinforcetower", true, "do not reinforce the prime tower")
+	// flag.BoolVar(&noReinforceTower, "noreinforcetower", true, "do not reinforce the prime tower")
 	flag.BoolVar(&noReplaceTool, "noreplacetool", false, "do not replace the tool number")
 	flag.Parse()
 }
@@ -103,9 +103,9 @@ func main() {
 	if !noReplaceTool {
 		funcs = append(funcs, fix.GcodeReplaceToolNum)
 	}
-	if !noReinforceTower {
-		funcs = append(funcs, fix.GcodeReinforceTower)
-	}
+	// if !noReinforceTower {
+	// funcs = append(funcs, fix.GcodeReinforceTower)
+	// }
 	funcs = append(funcs, fix.GcodeFixOrcaToolUnload)
 
 	for _, fn := range funcs {
