@@ -20,6 +20,7 @@ const (
 type Gcode struct {
 	word byte
 	addr string
+	size uint16
 }
 
 func (g *Gcode) Word() byte {
@@ -32,6 +33,10 @@ func (g *Gcode) HasAddr() bool {
 
 func (g *Gcode) Addr() string {
 	return g.addr
+}
+
+func (g *Gcode) Size() uint16 {
+	return g.size
 }
 
 func (g *Gcode) AddrAs(target any) error {
@@ -64,6 +69,7 @@ func (g *Gcode) AddrAs(target any) error {
 }
 
 func (g *Gcode) SetAddr(value any) error {
+	size := uint16(len(g.addr))
 	switch typ := value.(type) {
 	case string:
 		g.addr = strings.TrimSpace(typ)
@@ -100,6 +106,7 @@ func (g *Gcode) SetAddr(value any) error {
 	default:
 		return fmt.Errorf("unsupported addr type %T", typ)
 	}
+	g.size = g.size - size + uint16(len(g.addr))
 	return nil
 }
 
@@ -119,6 +126,7 @@ func (g *Gcode) Copy() *Gcode {
 	return &Gcode{
 		word: g.word,
 		addr: g.addr,
+		size: g.size,
 	}
 }
 
@@ -126,7 +134,7 @@ func NewGcode(word byte, addr string) (*Gcode, error) {
 	if err := isValidWord(word); err != nil {
 		return nil, err
 	}
-	return &Gcode{word: word, addr: addr}, nil
+	return &Gcode{word: word, addr: addr, size: 1 + uint16(len(addr))}, nil
 }
 
 func ParseGcode(s string) (*Gcode, error) {
@@ -266,6 +274,20 @@ func (b *GcodeBlock) GetToolNum() (t int32, err error) {
 	return t, err
 }
 
+func (b *GcodeBlock) Size() uint16 {
+	size := uint16(0)
+	for i := 0; i < len(b.params); i++ {
+		if b.params[i] != nil {
+			size += 1 + b.params[i].Size() // +1 for separator
+		}
+	}
+	cmdSize := uint16(0)
+	if b.cmd != nil {
+		cmdSize = b.cmd.Size()
+	}
+	return cmdSize + size + 1 + uint16(len(b.comment))
+}
+
 /*
 Format formats the command with the given format string.
 
@@ -275,31 +297,29 @@ Format formats the command with the given format string.
 */
 func (b *GcodeBlock) Format(format string) string {
 	result := strings.Builder{}
-	result.Grow(128)
+	result.Grow(int(b.Size()))
 
 	for i := 0; i < len(format); i++ {
-		if format[i] == '%' {
-			if i+1 < len(format) {
-				switch format[i+1] {
-				case 'c':
-					if b.cmd != nil {
-						result.WriteString(b.Cmd().String())
-					}
-					i++
-				case 'p':
-					if total := len(b.Params()); total > 0 {
-						for i, g := range b.Params() {
-							result.WriteString(g.String())
-							if i < total-1 {
-								result.WriteString(GCODE_SEPARATOR)
-							}
+		if format[i] == '%' && i+1 < len(format) {
+			switch format[i+1] {
+			case 'c':
+				if b.cmd != nil {
+					result.WriteString(b.Cmd().String())
+				}
+				i++
+			case 'p':
+				if total := len(b.Params()); total > 0 {
+					for i, g := range b.Params() {
+						result.WriteString(g.String())
+						if i < total-1 {
+							result.WriteString(GCODE_SEPARATOR)
 						}
 					}
-					i++
-				case 'm':
-					result.WriteString(b.Comment())
-					i++
 				}
+				i++
+			case 'm':
+				result.WriteString(b.Comment())
+				i++
 			}
 		} else {
 			result.WriteByte(format[i])

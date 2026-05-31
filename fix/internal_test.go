@@ -699,26 +699,26 @@ func TestGcode(t *testing.T) {
 			new    any
 			err    error
 		}{
-			{"E0.00000", &Gcode{'E', "6"}, 0.000001, nil}, // 0.000001 < 0.00001
-			{"E0.00001", &Gcode{'E', "6"}, 0.00001, nil},
-			{"E3", &Gcode{'E', ""}, 3, nil},
-			{"E4", &Gcode{'E', ""}, int32(4), nil},
-			{"E5", &Gcode{'E', ""}, int64(5), nil},
-			{"E6", &Gcode{'E', ""}, uint(6), nil},
-			{"E7", &Gcode{'E', ""}, uint32(7), nil},
-			{"E8", &Gcode{'E', ""}, uint64(8), nil},
-			{"E9.10000", &Gcode{'E', ""}, float32(9.1), nil}, // E.5f
-			{"E9.20000", &Gcode{'E', ""}, float64(9.2), nil},
-			{"R", &Gcode{'R', "999"}, nil, nil},
-			{"Z", &Gcode{'Z', "999"}, false, errors.New("unsupported addr type bool")},
-			{"S", &Gcode{'S', "999"}, errors.ErrUnsupported, errors.New("unsupported addr type *errors.errorString")},
-			{"X0.001", &Gcode{'X', ""}, 0.001, nil},
-			{"X-0.001", &Gcode{'X', ""}, -0.001, nil},
-			{"E1.23457", &Gcode{'E', ""}, 1.23456789, nil},        // E.5f
-			{"E-1.23457", &Gcode{'E', ""}, -1.23456789, nil},      // E.5f
-			{"E-1.23456789", &Gcode{'E', ""}, "-1.23456789", nil}, // string
-			{"X0.000", &Gcode{'X', "6"}, 0.0001, nil},             // 0.0001 < 0.001
-			{"X1.235", &Gcode{'X', ""}, 1.23456789, nil},          // .3f
+			{"E0.00000", &Gcode{'E', "6", 1 + uint16(len("6"))}, 0.000001, nil}, // 0.000001 < 0.00001
+			{"E0.00001", &Gcode{'E', "6", 1 + uint16(len("6"))}, 0.00001, nil},
+			{"E3", &Gcode{'E', "", 1 + uint16(len(""))}, 3, nil},
+			{"E4", &Gcode{'E', "", 1 + uint16(len(""))}, int32(4), nil},
+			{"E5", &Gcode{'E', "", 1 + uint16(len(""))}, int64(5), nil},
+			{"E6", &Gcode{'E', "", 1 + uint16(len(""))}, uint(6), nil},
+			{"E7", &Gcode{'E', "", 1 + uint16(len(""))}, uint32(7), nil},
+			{"E8", &Gcode{'E', "", 1 + uint16(len(""))}, uint64(8), nil},
+			{"E9.10000", &Gcode{'E', "", 1 + uint16(len(""))}, float32(9.1), nil}, // E.5f
+			{"E9.20000", &Gcode{'E', "", 1 + uint16(len(""))}, float64(9.2), nil},
+			{"R", &Gcode{'R', "999", 1 + uint16(len("999"))}, nil, nil},
+			{"Z", &Gcode{'Z', "999", 1 + uint16(len("999"))}, false, errors.New("unsupported addr type bool")},
+			{"S", &Gcode{'S', "999", 1 + uint16(len("999"))}, errors.ErrUnsupported, errors.New("unsupported addr type *errors.errorString")},
+			{"X0.001", &Gcode{'X', "", 1 + uint16(len(""))}, 0.001, nil},
+			{"X-0.001", &Gcode{'X', "", 1 + uint16(len(""))}, -0.001, nil},
+			{"E1.23457", &Gcode{'E', "", 1 + uint16(len(""))}, 1.23456789, nil},        // E.5f
+			{"E-1.23457", &Gcode{'E', "", 1 + uint16(len(""))}, -1.23456789, nil},      // E.5f
+			{"E-1.23456789", &Gcode{'E', "", 1 + uint16(len(""))}, "-1.23456789", nil}, // string
+			{"X0.000", &Gcode{'X', "6", 1 + uint16(len("6"))}, 0.0001, nil},             // 0.0001 < 0.001
+			{"X1.235", &Gcode{'X', "", 1 + uint16(len(""))}, 1.23456789, nil},          // .3f
 		}
 
 		for _, c := range cases {
@@ -740,7 +740,7 @@ func TestGcode(t *testing.T) {
 		var origin *Gcode
 
 		var str string
-		origin = &Gcode{'X', "6"}
+		origin = &Gcode{'X', "6", 1 + uint16(len("6"))}
 		origin.AddrAs(&str)
 		if str != "6" {
 			t.Errorf("unexpected addr: %v", str)
@@ -764,7 +764,7 @@ func TestGcode(t *testing.T) {
 			t.Errorf("unexpected addr: %v", f32)
 		}
 
-		origin = &Gcode{'X', ".000001"}
+		origin = &Gcode{'X', ".000001", 1 + uint16(len(".000001"))}
 		origin.AddrAs(&f32)
 		if f32 != 0.000001 {
 			t.Errorf("unexpected addr: %v", f32)
