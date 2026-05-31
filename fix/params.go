@@ -277,6 +277,9 @@ func ParseParams(gcodes []*GcodeBlock) error {
 			"312x200": ModelJ1,
 			"324x200": ModelJ1,
 			"300x200": ModelJ1,
+
+			"U1":      ModelU1,
+			"270x270": ModelU1,
 		}
 		for k, v := range models {
 			if strings.Contains(model, k) {

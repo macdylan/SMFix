@@ -18,6 +18,7 @@ const (
 	ModelA350 = "Snapmaker 2.0 A350"
 	ModelA400 = "A400"
 	ModelJ1   = "Snapmaker J1"
+	ModelU1   = "Snapmaker U1"
 
 	absMinInt64 = 1 << 63
 	maxInt64    = 1<<63 - 1
