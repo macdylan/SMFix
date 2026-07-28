@@ -124,47 +124,33 @@ func GoInParallelAndWait(work func(wi, wn int)) {
 	wg.Wait()
 }
 
-// removeDuplicateSpaces removes all consecutive spaces in a string
-func removeDuplicateSpaces(s string) string {
-	var (
-		sb        strings.Builder
-		prevSpace = false
-	)
+func prepareGcodeLineToParse(s string) string {
+	if s == "" {
+		return s
+	}
+
+	buf := make([]byte, 0, len(s))
+	prevSpace := true
 
 	for i := 0; i < len(s); i++ {
-		if s[i] == ' ' {
+		switch s[i] {
+		case '\n', '\t', '\r':
+		case ' ':
 			if !prevSpace {
-				sb.WriteByte(s[i])
+				buf = append(buf, ' ')
 				prevSpace = true
 			}
-		} else {
-			sb.WriteByte(s[i])
+		default:
+			buf = append(buf, s[i])
 			prevSpace = false
 		}
 	}
 
-	return sb.String()
-}
-
-// removeSpecialChars removes only the escape characters \n, \t, and \r from the given string
-func removeSpecialChars(s string) string {
-	var result strings.Builder
-	for _, c := range s {
-		if c != '\n' && c != '\t' && c != '\r' {
-			result.WriteRune(c)
-		}
+	if len(buf) > 0 && buf[len(buf)-1] == ' ' {
+		buf = buf[:len(buf)-1]
 	}
-	return result.String()
-}
 
-// prepareGcodeLineToParse modify a string to can be parsed for the Parse function
-// It doesn't verify if s strings is a gcode line valid
-func prepareGcodeLineToParse(s string) string {
-	s = strings.TrimSpace(s)
-	s = removeSpecialChars(s)
-	s = removeDuplicateSpaces(s)
-
-	return s
+	return string(buf)
 }
 
 type elementTaken struct {
