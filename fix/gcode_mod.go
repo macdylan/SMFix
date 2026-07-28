@@ -288,6 +288,7 @@ func GcodeReinforceTower(gcodes []*GcodeBlock) (output []*GcodeBlock) {
 func GcodeReplaceToolNum(gcodes []*GcodeBlock) (output []*GcodeBlock) {
 	var (
 		idxT0, idxT1 int
+		mutex        sync.Mutex
 	)
 	nGcodes := len(gcodes)
 	work := func(wi, wn int) {
@@ -298,9 +299,13 @@ func GcodeReplaceToolNum(gcodes []*GcodeBlock) (output []*GcodeBlock) {
 				{
 					tool, _ := gcode.GetToolNum()
 					if num, t := tool%2, int(tool); num == 0 {
+						mutex.Lock()
 						idxT0 = t
+						mutex.Unlock()
 					} else {
+						mutex.Lock()
 						idxT1 = t
+						mutex.Unlock()
 					}
 					gcodes[n].Cmd().SetAddr(tool % 2)
 				}
