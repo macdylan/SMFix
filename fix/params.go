@@ -116,8 +116,31 @@ func ParseParams(gcodes []*GcodeBlock) error {
 	for _, gcode := range gcodes {
 		Params.TotalLines++
 
-		line := gcode.String()
-		if len(line) < 1 {
+		// command line: only print-mode commands are relevant here.
+		// Avoids building a string for every gcode line (hot path for
+		// multi-hundred-MB files).
+		if !gcode.IsComment() {
+			if gcode.Is("M605") {
+				var mode int32
+				if gcode.GetParam('S', &mode) == nil {
+					switch mode {
+					case 2:
+						Params.PrintMode = PrintModeDuplication
+					case 3:
+						Params.PrintMode = PrintModeMirror
+					case 4:
+						Params.PrintMode = PrintModeBackup
+					}
+				}
+			}
+			if thumbnail_start && gcode.Comment() != "" {
+				thumbnail_bytes = append(thumbnail_bytes, []byte(gcode.Comment()))
+			}
+			continue
+		}
+
+		line := gcode.Comment() // comment lines always start with ';'
+		if line == "" {
 			continue
 		}
 
@@ -127,12 +150,6 @@ func ParseParams(gcodes []*GcodeBlock) error {
 			Params.TotalLines = 1 // reset at first line
 		} else if strings.HasPrefix(line, "; SNAPMAKER_GCODE_V1") {
 			Params.Version = 1
-		} else if strings.HasPrefix(line, "M605 S2") {
-			Params.PrintMode = PrintModeDuplication
-		} else if strings.HasPrefix(line, "M605 S3") {
-			Params.PrintMode = PrintModeMirror
-		} else if strings.HasPrefix(line, "M605 S4") {
-			Params.PrintMode = PrintModeBackup
 		} else if strings.HasPrefix(line, "; thumbnail begin ") {
 			thumbnail_start = true
 		} else if strings.HasPrefix(line, "; thumbnail end") {
