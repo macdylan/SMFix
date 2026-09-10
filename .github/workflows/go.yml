@@ -8,25 +8,31 @@ on:
     tags:
       - "v*.*"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Go Build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
-          go-version: "1.20"
+          go-version: "1.25.x"
           check-latest: true
+
+      - name: Test
+        run: make test
 
       - name: Build
         run: make all-zip
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           draft: true
           prerelease: false
