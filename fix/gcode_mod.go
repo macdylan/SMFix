@@ -287,7 +287,8 @@ func GcodeReinforceTower(gcodes []*GcodeBlock) (output []*GcodeBlock) {
 // T4 -> T0, T5 -> T1
 func GcodeReplaceToolNum(gcodes []*GcodeBlock) (output []*GcodeBlock) {
 	var (
-		idxT0, idxT1 int
+		// original tool numbers that map to physical T0/T1; -1 = never seen
+		idxT0, idxT1 = -1, -1
 		mutex        sync.Mutex
 	)
 	nGcodes := len(gcodes)
@@ -346,11 +347,6 @@ func GcodeReplaceToolNum(gcodes []*GcodeBlock) (output []*GcodeBlock) {
 		"; hot_plate_temp_initial_layer = ",
 	}
 	work2 := func(wi, wn int) {
-		defer func() {
-			if r := recover(); r != nil {
-				// fmt.Println(r, comment)
-			}
-		}()
 		for n := wi; n < nGcodes; n += wn {
 			gcode := gcodes[n]
 			if gcode.IsComment() {
@@ -370,13 +366,24 @@ func GcodeReplaceToolNum(gcodes []*GcodeBlock) (output []*GcodeBlock) {
 								}
 								vs = strings.Split(v, delimiter)
 								l := len(vs)
-								if l >= idxT0 {
+								// slots are always trimmed; the value is
+								// taken from the original tool when that
+								// tool was seen, otherwise kept as-is
+								vs[0] = strings.TrimSpace(vs[0])
+								if idxT0 >= 0 && idxT0 < l {
 									vs[0] = strings.TrimSpace(vs[idxT0])
 								}
-								if l >= idxT1 {
-									vs[1] = strings.TrimSpace(vs[idxT1])
+								if l > 1 {
+									v1 := vs[1]
+									if idxT1 >= 0 && idxT1 < l {
+										v1 = vs[idxT1]
+									}
+									vs[1] = strings.TrimSpace(v1)
 								}
-								nv := strings.Join(vs[:2], delimiter)
+								if l > 2 {
+									vs = vs[:2]
+								}
+								nv := strings.Join(vs, delimiter)
 								var buf bytes.Buffer
 								buf.WriteString(comment[:i+2])
 								buf.WriteString(nv)

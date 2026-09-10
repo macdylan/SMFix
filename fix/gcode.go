@@ -149,7 +149,6 @@ type GcodeBlock struct {
 	cmd     *Gcode
 	params  []*Gcode
 	comment string
-	next    *GcodeBlock
 }
 
 func (b *GcodeBlock) Cmd() *Gcode {
@@ -215,11 +214,14 @@ func (b *GcodeBlock) HasParam(p byte) bool {
 }
 
 func (b *GcodeBlock) RemoveParam(p byte) {
-	for i, g := range b.Params() {
-		if g.Word() == p {
-			b.params = append(b.params[:i], b.params[i+1:]...)
+	params := b.Params()
+	filtered := params[:0]
+	for _, g := range params {
+		if g.Word() != p {
+			filtered = append(filtered, g)
 		}
 	}
+	b.params = filtered
 }
 
 func (b *GcodeBlock) SetParam(p byte, v string) error {
@@ -332,11 +334,14 @@ func (b *GcodeBlock) Format(format string) string {
 func (b *GcodeBlock) Copy() *GcodeBlock {
 	params := make([]*Gcode, len(b.Params()))
 	copy(params, b.Params())
-	return &GcodeBlock{
-		cmd:     b.Cmd().Copy(),
+	blk := &GcodeBlock{
 		params:  params,
 		comment: b.Comment(),
 	}
+	if b.cmd != nil {
+		blk.cmd = b.cmd.Copy()
+	}
+	return blk
 }
 
 func ParseGcodeBlock(source string) (*GcodeBlock, error) {
@@ -418,12 +423,6 @@ func isValidWord(word byte) error {
 	*/
 
 	return fmt.Errorf("gcode's word has invalid value: %v", word)
-}
-
-func insertAfter(gcodes *[]*GcodeBlock, pos int, g *GcodeBlock) {
-	*gcodes = append(*gcodes, nil)
-	copy((*gcodes)[pos:], (*gcodes)[pos-1:])
-	(*gcodes)[pos-1] = g
 }
 
 func insertBefore(gcodes *[]*GcodeBlock, pos int, g *GcodeBlock) {
