@@ -21,15 +21,19 @@ var (
 	noPreheat        bool
 	noReinforceTower bool
 	noReplaceTool    bool
+	showHelp         bool
+	showVersion      bool
 )
 
 func init() {
-	flag.StringVar(&OutputPath, "o", "", "output path, default is input path")
-	flag.BoolVar(&noTrim, "notrim", false, "do not trim spaces in the gcode")
-	flag.BoolVar(&noShutoff, "noshutoff", false, "do not shutoff nozzles that are no longer in use")
-	flag.BoolVar(&noPreheat, "nopreheat", true, "do not pre-heat nozzles")
-	// flag.BoolVar(&noReinforceTower, "noreinforcetower", true, "do not reinforce the prime tower")
-	flag.BoolVar(&noReplaceTool, "noreplacetool", false, "do not replace the tool number")
+	flag.Usage = flag_usage
+	flag.StringVar(&OutputPath, "o", "", "output path; by default the input file is overwritten in place")
+	flag.BoolVar(&noTrim, "notrim", false, "reserved; line trimming is currently disabled (no-op)")
+	flag.BoolVar(&noShutoff, "noshutoff", false, "keep extruders hot after their last use; by default idle nozzles are turned off with M104 S0")
+	flag.BoolVar(&noPreheat, "nopreheat", true, "do not pre-heat the idle extruder before tool changes; slicers >= PrusaSlicer 2.8 / OrcaSlicer 2.1.1 handle preheat natively")
+	flag.BoolVar(&noReplaceTool, "noreplacetool", false, "keep original tool numbers; by default T2+ are remapped to T0/T1 for 2-nozzle printers")
+	flag.BoolVar(&showHelp, "h", false, "show this help and exit")
+	flag.BoolVar(&showVersion, "version", false, "print version and exit")
 }
 
 // maxScanTokenSize allows metadata/comment lines up to 1 MB; the bufio
@@ -70,6 +74,45 @@ func readGcodes(r io.Reader) ([]*fix.GcodeBlock, error) {
 	return gcodes, nil
 }
 
+// u1ModelLine reports whether a raw gcode line marks the file as a
+// Snapmaker U1 slice (see IsU1Model for why U1 needs passthrough).
+func u1ModelLine(line []byte) bool {
+	return bytes.HasPrefix(line, []byte("; printer_model =")) && bytes.Contains(line, []byte("U1"))
+}
+
+var markLine = []byte("; Postprocessed by smfix")
+
+// isU1Reader scans raw input lines (no parsing, no allocations) to
+// decide between the U1 passthrough and the SM2 pipeline. It returns
+// fix.ErrIsFixed when the file was already processed. r is consumed;
+// the caller must rewind seekable readers afterwards.
+func isU1Reader(r io.Reader) (u1 bool, err error) {
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 64*1024), maxScanTokenSize)
+	for sc.Scan() {
+		line := sc.Bytes()
+		if bytes.HasPrefix(line, markLine) {
+			return false, fix.ErrIsFixed
+		}
+		if u1ModelLine(line) {
+			return true, nil
+		}
+	}
+	return false, sc.Err()
+}
+
+// writeU1 emits the processed-mark followed by the input verbatim.
+func writeU1(out io.Writer, in io.Reader) error {
+	bufWriter := bufio.NewWriterSize(out, 64*1024)
+	if _, err := bufWriter.WriteString(fix.Mark + "\n"); err != nil {
+		return err
+	}
+	if _, err := io.Copy(bufWriter, in); err != nil {
+		return err
+	}
+	return bufWriter.Flush()
+}
+
 // fixGcodes runs the enabled modifier chain over the parsed blocks.
 func fixGcodes(gcodes []*fix.GcodeBlock) []*fix.GcodeBlock {
 	funcs := make([]fix.GcodeModifier, 0, 4)
@@ -90,6 +133,19 @@ func fixGcodes(gcodes []*fix.GcodeBlock) []*fix.GcodeBlock {
 	return gcodes
 }
 
+// writeBlocks emits every gcode block on its own line.
+func writeBlocks(bufWriter *bufio.Writer, gcodes []*fix.GcodeBlock) error {
+	for _, gcode := range gcodes {
+		if _, err := bufWriter.WriteString(gcode.String()); err != nil {
+			return err
+		}
+		if err := bufWriter.WriteByte('\n'); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // writeOutput emits the Snapmaker header followed by all gcode blocks.
 func writeOutput(out io.Writer, gcodes []*fix.GcodeBlock) error {
 	// extract headers
@@ -106,21 +162,56 @@ func writeOutput(out io.Writer, gcodes []*fix.GcodeBlock) error {
 	}
 
 	// write gcodes
-	for _, gcode := range gcodes {
-		if _, err := bufWriter.WriteString(gcode.String()); err != nil {
-			return err
-		}
-		if err := bufWriter.WriteByte('\n'); err != nil {
-			return err
-		}
+	if err := writeBlocks(bufWriter, gcodes); err != nil {
+		return err
 	}
 	return bufWriter.Flush()
 }
 
-// process pipelines input gcode into fixed gcode with a Snapmaker header.
-// in and out must not refer to the same file.
+// seekableReader can be scanned and rewound (files, strings.Reader, ...).
+type seekableReader interface {
+	io.Reader
+	io.Seeker
+}
+
+// process pipelines input gcode into fixed gcode with a Snapmaker
+// header. U1 files bypass the pipeline entirely: the input is copied
+// verbatim after the processed-mark (raw passthrough, no parsing).
+// The input is read twice; non-seekable readers are buffered.
 func process(in io.Reader, out io.Writer) error {
-	gcodes, err := readGcodes(in)
+	if s, ok := in.(seekableReader); ok {
+		u1, err := isU1Reader(s)
+		if err != nil {
+			return err
+		}
+		if _, err := s.Seek(0, io.SeekStart); err != nil {
+			return err
+		}
+		if u1 {
+			return writeU1(out, s)
+		}
+		gcodes, err := readGcodes(s)
+		if err != nil {
+			return err
+		}
+		gcodes = fixGcodes(gcodes)
+		return writeOutput(out, gcodes)
+	}
+
+	// non-seekable input: buffer once so it can be inspected and,
+	// for U1, emitted verbatim
+	buf, err := io.ReadAll(in)
+	if err != nil {
+		return err
+	}
+	u1, err := isU1Reader(bytes.NewReader(buf))
+	if err != nil {
+		return err
+	}
+	if u1 {
+		return writeU1(out, bytes.NewReader(buf))
+	}
+	gcodes, err := readGcodes(bytes.NewReader(buf))
 	if err != nil {
 		return err
 	}
@@ -130,6 +221,15 @@ func process(in io.Reader, out io.Writer) error {
 
 func main() {
 	flag.Parse()
+
+	if showHelp {
+		printUsage()
+		return
+	}
+	if showVersion {
+		fmt.Println("smfix", Version)
+		return
+	}
 
 	numCPU := runtime.NumCPU()
 	runtime.GOMAXPROCS(numCPU)
@@ -149,6 +249,48 @@ func main() {
 		stopCPUProfile()
 	}()
 
+	// raw scan decides between U1 passthrough and the SM2 pipeline;
+	// consumes the file, so seek back before reading again
+	u1, err := isU1Reader(in)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	if _, err := in.Seek(0, io.SeekStart); err != nil {
+		log.Fatalln(err)
+	}
+
+	// prepare for output file
+	if len(OutputPath) == 0 {
+		OutputPath = flag.Arg(0)
+	}
+	inPlace := OutputPath == flag.Arg(0)
+
+	if u1 {
+		// raw passthrough; in-place requires buffering because a
+		// file cannot be prepended in place
+		var src io.Reader = in
+		if inPlace {
+			buf, err := io.ReadAll(in)
+			if err != nil {
+				log.Fatalln(err)
+			}
+			src = bytes.NewReader(buf)
+			// Windows refuses to truncate the file while it is open
+			in.Close()
+		}
+
+		out, err := os.Create(OutputPath)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		defer in.Close()
+		defer out.Close()
+		if err := writeU1(out, src); err != nil {
+			log.Fatalln(err)
+		}
+		return
+	}
+
 	// read gcodes form file
 	gcodes, err := readGcodes(in)
 	if err != nil {
@@ -160,10 +302,6 @@ func main() {
 
 	gcodes = fixGcodes(gcodes)
 
-	// prepare for output file
-	if len(OutputPath) == 0 {
-		OutputPath = flag.Arg(0)
-	}
 	out, err := os.Create(OutputPath)
 	if err != nil {
 		log.Fatalln(err)
