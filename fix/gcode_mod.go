@@ -286,6 +286,11 @@ func GcodeReinforceTower(gcodes []*GcodeBlock) (output []*GcodeBlock) {
 // T2 -> T0, T3 -> T1
 // T4 -> T0, T5 -> T1
 func GcodeReplaceToolNum(gcodes []*GcodeBlock) (output []*GcodeBlock) {
+	if IsU1Model(gcodes) {
+		// 4-toolhead machine: T2+ carry real toolheads, folding them
+		// onto T0/T1 would print materials with the wrong heads.
+		return gcodes
+	}
 	var (
 		// original tool numbers that map to physical T0/T1; -1 = never seen
 		idxT0, idxT1 = -1, -1

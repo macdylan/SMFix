@@ -98,6 +98,24 @@ func NewParams() *slicerParams {
 
 var Params = NewParams()
 
+// IsU1Model reports whether the slicer metadata targets a Snapmaker U1.
+// The U1 is a Klipper-based 4-toolhead machine: folding tool numbers
+// onto T0/T1 would corrupt its start gcode (M104 S0 T2 A0, ...), the
+// SM2 shutoff modifier could cancel required M109 T<n> waits inside
+// toolchange macros, and its firmware reads the slicer's native
+// metadata instead of the SM2 header.
+func IsU1Model(gcodes []*GcodeBlock) bool {
+	for _, gcode := range gcodes {
+		if !gcode.IsComment() {
+			continue
+		}
+		if v, ok := getSetting(gcode.Comment(), "printer_model"); ok && strings.Contains(v, "U1") {
+			return true
+		}
+	}
+	return false
+}
+
 func ParseParams(gcodes []*GcodeBlock) error {
 	var (
 		thumbnail_bytes [][]byte
